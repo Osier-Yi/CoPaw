@@ -91,6 +91,24 @@ button {
   display: block;
 }
 
+.hero-brand-row .hero-brand-main {
+  position: relative;
+  justify-content: center;
+}
+
+.hero-brand-row .hero-brand-ip {
+  position: absolute;
+  right: 100%;
+  margin-right: var(--space-2);
+  width: clamp(3.5rem, 10vw, 5.5rem);
+  height: auto;
+  max-height: 5.5rem;
+  object-fit: contain;
+  flex-shrink: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 .hero-brand-row .hero-brand-text {
   display: inline-flex;
   align-items: center;
