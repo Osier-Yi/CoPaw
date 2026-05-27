@@ -17,11 +17,13 @@ if _plugin_dir not in sys.path:
 
 from qwenpaw.plugins.api import PluginApi  # noqa: E402
 
+import mode as mode_mod  # noqa: E402
 from emitter import (  # noqa: E402
     emit_pet_event,
     ensure_desktop_available,
     stop_desktop,
 )
+from event_hub import get_hub  # noqa: E402
 from patch_approval import (  # noqa: E402
     patch_approval_service,
     restore_approval_service,
@@ -105,7 +107,18 @@ class QwenPawPetPlugin:
             )
 
         try:
-            ensure_desktop_available()
+            current_mode, mode_src = mode_mod.resolve_mode()
+            logger.info(
+                "QwenPaw Pet: mode=%s (source=%s)",
+                current_mode,
+                mode_src,
+            )
+            # Remote mode never autospawns a local Qt window — the
+            # desktop lives on the user's laptop and subscribes via SSE.
+            # The hub + emitter still publish events, so the remote
+            # client receives them as soon as it connects.
+            if current_mode == "local":
+                ensure_desktop_available()
             emit_pet_event(
                 "qwenpaw.startup",
                 text="QwenPaw started",
@@ -130,6 +143,17 @@ class QwenPawPetPlugin:
         except Exception:
             logger.warning(
                 "QwenPaw Pet: shutdown event emit failed",
+                exc_info=True,
+            )
+
+        try:
+            # Tell SSE subscribers to drain & exit cleanly. Without this
+            # they would hang on their per-sub queue until the TCP
+            # connection times out.
+            get_hub().close()
+        except Exception:
+            logger.warning(
+                "QwenPaw Pet: hub close failed",
                 exc_info=True,
             )
 

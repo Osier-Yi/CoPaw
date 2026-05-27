@@ -1,38 +1,38 @@
-const U = "language", _ = "qwenpaw-pet-language-change";
-function M() {
+const ae = "language", Y = "qwenpaw-pet-language-change";
+function ee() {
   try {
-    return localStorage.getItem(U) || "";
+    return localStorage.getItem(ae) || "";
   } catch {
     return "";
   }
 }
-function pe() {
-  const t = "__qwenpawPetLanguageHook", r = Storage.prototype;
-  if (r[t]) return;
-  const c = r.setItem;
-  r.setItem = function(l, s) {
-    c.call(this, l, s), l === U && window.dispatchEvent(new CustomEvent(_, { detail: s }));
-  }, r[t] = !0;
+function xe() {
+  const e = "__qwenpawPetLanguageHook", r = Storage.prototype;
+  if (r[e]) return;
+  const o = r.setItem;
+  r.setItem = function(i, l) {
+    o.call(this, i, l), i === ae && window.dispatchEvent(new CustomEvent(Y, { detail: l }));
+  }, r[e] = !0;
 }
-function de(t) {
-  pe();
-  let r = M();
-  const c = (d) => {
-    d !== r && (r = d, t(d));
-  }, l = (d) => {
-    c(String(d.detail ?? ""));
-  }, s = (d) => {
-    d.key === U && c(d.newValue ?? "");
+function Te(e) {
+  xe();
+  let r = ee();
+  const o = (p) => {
+    p !== r && (r = p, e(p));
+  }, i = (p) => {
+    o(String(p.detail ?? ""));
+  }, l = (p) => {
+    p.key === ae && o(p.newValue ?? "");
   };
-  window.addEventListener(_, l), window.addEventListener("storage", s);
-  const a = window.setInterval(() => {
-    c(M());
+  window.addEventListener(Y, i), window.addEventListener("storage", l);
+  const s = window.setInterval(() => {
+    o(ee());
   }, 500);
   return () => {
-    window.removeEventListener(_, l), window.removeEventListener("storage", s), window.clearInterval(a);
+    window.removeEventListener(Y, i), window.removeEventListener("storage", l), window.clearInterval(s);
   };
 }
-const Z = {
+const le = {
   en: {
     routeLabel: "Pet",
     title: "QwenPaw Pet",
@@ -66,7 +66,48 @@ const Z = {
     importFormatHint: "Folder or unzipped archive must contain pet.json and spritesheet.webp (1536×1872).",
     selectedOne: "Selected: {path}",
     selectedMany: "Selected: {count} files (root: {root})",
-    importReplace: "Replace if a pet with the same id already exists"
+    importReplace: "Replace if a pet with the same id already exists",
+    modeSection: "Deployment mode",
+    modeLocal: "Local",
+    modeRemote: "Remote",
+    modeLocalHint: "Pet desktop runs on this machine; events stream over loopback HTTP.",
+    modeRemoteHint: "Pet desktop runs on the user's laptop and subscribes to this QwenPaw via SSE.",
+    modeLockedByEnv: "Mode is fixed by the QWENPAW_PET_MODE environment variable.",
+    modeUpdated: "Mode updated to {mode}.",
+    modeUpdateFailed: "Failed to update mode.",
+    pairCardTitle: "Pair a remote desktop",
+    pairCardIntro: "On a desktop that has the pet app installed: open the tray menu, choose “Paste pairing link”, and paste the link below.",
+    copyPairLink: "Copy pairing link",
+    pairLinkCopied: "Pairing link copied to clipboard.",
+    pairLinkCopyFailed: "Could not copy automatically — copy the link manually.",
+    pairLinkExpires: "Pairing link expires on {date}.",
+    pairLinkNoteReveal: "The token inside this link is shown once. Re-issue if you lose it.",
+    pairLinkLabel: "Label (optional, e.g. “MyMac”)",
+    pairLinkLabelPlaceholder: "Optional device label",
+    pairedDevices: "Paired devices",
+    pairedNone: "No devices paired yet.",
+    pendingLinksHint: "{count} unused pairing link(s) outstanding — only devices that have actually connected are listed above.",
+    cleanupPending: "Revoke unused links",
+    cleanupConfirmTitle: "Revoke all unused pairing links?",
+    cleanupConfirmBody: "Links that have never been used will be invalidated. Already-paired devices are unaffected.",
+    cleanupSuccess: "Revoked {count} unused pairing link(s).",
+    cleanupFailed: "Failed to revoke some pairing links.",
+    pairedLabelUnnamed: "(unnamed)",
+    pairedCreated: "Created {date}",
+    pairedLastSeenNever: "Never connected",
+    pairedLastSeen: "Last seen {date}",
+    pairedExpires: "Expires {date}",
+    revokeToken: "Revoke",
+    revokeConfirmTitle: "Revoke this pairing?",
+    revokeConfirmBody: "The desktop using this token will be disconnected on its next reconnect attempt.",
+    revokeConfirmOk: "Revoke",
+    revokeConfirmCancel: "Cancel",
+    revokeSuccess: "Pairing revoked.",
+    revokeFailed: "Failed to revoke pairing.",
+    downloadCardTitle: "1. Download QwenPaw Pet Desktop",
+    downloadCardHint: "Builds will appear here once packaging is published. For now, install the desktop via pip on the target machine.",
+    pairCardHeader: "2. Pair to this QwenPaw",
+    remoteModeNote: "Local desktop pet management is hidden in remote mode. Switch back to Local mode to manage pets on this machine."
   },
   zh: {
     routeLabel: "宠物",
@@ -101,111 +142,212 @@ const Z = {
     importFormatHint: "文件夹或解压后的目录需包含 pet.json 与 spritesheet.webp（1536×1872）。",
     selectedOne: "已选择：{path}",
     selectedMany: "已选择：{count} 个文件（根目录：{root}）",
-    importReplace: "若已存在相同 id 的宠物则覆盖"
+    importReplace: "若已存在相同 id 的宠物则覆盖",
+    modeSection: "部署模式",
+    modeLocal: "本机",
+    modeRemote: "远端",
+    modeLocalHint: "桌面宠物运行在本机，事件通过本地 HTTP 推送。",
+    modeRemoteHint: "桌面宠物运行在用户笔记本上，通过 SSE 主动订阅这台 QwenPaw。",
+    modeLockedByEnv: "当前模式由 QWENPAW_PET_MODE 环境变量固定，无法修改。",
+    modeUpdated: "模式已切换为 {mode}。",
+    modeUpdateFailed: "切换模式失败。",
+    pairCardTitle: "配对远端桌面",
+    pairCardIntro: "在已安装桌宠 app 的电脑上：打开托盘菜单，选择「粘贴配对链接」，然后粘贴下面这条链接。",
+    copyPairLink: "复制配对链接",
+    pairLinkCopied: "配对链接已复制到剪贴板。",
+    pairLinkCopyFailed: "无法自动复制，请手动复制链接。",
+    pairLinkExpires: "配对链接将于 {date} 过期。",
+    pairLinkNoteReveal: "链接中的 token 只会显示一次，丢失后需重新生成。",
+    pairLinkLabel: "标签（可选，如「MyMac」）",
+    pairLinkLabelPlaceholder: "可选的设备标签",
+    pairedDevices: "已配对的设备",
+    pairedNone: "暂无已配对设备。",
+    pendingLinksHint: "当前有 {count} 条未使用的配对链接 —— 上方仅显示真正连接过的设备。",
+    cleanupPending: "撤销未使用的链接",
+    cleanupConfirmTitle: "撤销所有未使用的配对链接？",
+    cleanupConfirmBody: "从未被使用过的链接将被作废，已经配对的设备不受影响。",
+    cleanupSuccess: "已撤销 {count} 条未使用的配对链接。",
+    cleanupFailed: "部分配对链接撤销失败。",
+    pairedLabelUnnamed: "（未命名）",
+    pairedCreated: "创建于 {date}",
+    pairedLastSeenNever: "从未连接",
+    pairedLastSeen: "最近活跃 {date}",
+    pairedExpires: "过期时间 {date}",
+    revokeToken: "撤销",
+    revokeConfirmTitle: "确认撤销此配对？",
+    revokeConfirmBody: "使用此 token 的桌面端将在下次重连时收到 401 并断开。",
+    revokeConfirmOk: "撤销",
+    revokeConfirmCancel: "取消",
+    revokeSuccess: "已撤销该配对。",
+    revokeFailed: "撤销失败。",
+    downloadCardTitle: "1. 下载桌面宠物 app",
+    downloadCardHint: "打包好的安装包将出现在这里。当前请在目标机器上通过 pip 安装。",
+    pairCardHeader: "2. 配对到这台 QwenPaw",
+    remoteModeNote: "远端模式下隐藏了本机桌宠管理。如需在本机管理宠物，请切回本机模式。"
   }
 };
-function ue(t) {
-  return String(t || "").trim().split("-")[0].toLowerCase() === "zh" ? "zh" : "en";
+function Re(e) {
+  return String(e || "").trim().split("-")[0].toLowerCase() === "zh" ? "zh" : "en";
 }
-function Q(t) {
-  return ue(t ?? M());
+function te(e) {
+  return Re(e ?? ee());
 }
-function ee(t, r, c) {
-  let l = Z[t][r] ?? Z.en[r];
-  if (c)
-    for (const [s, a] of Object.entries(c))
-      l = l.split(`{${s}}`).join(String(a));
-  return l;
+function pe(e, r, o) {
+  let i = le[e][r] ?? le.en[r];
+  if (o)
+    for (const [l, s] of Object.entries(o))
+      i = i.split(`{${l}}`).join(String(s));
+  return i;
 }
-function fe(t) {
-  const [r, c] = t.useState(
-    () => Q()
+function G(e) {
+  const [r, o] = e.useState(
+    () => te()
   );
-  t.useEffect(() => {
-    const s = (a) => {
-      c((d) => {
-        const b = Q(a);
-        return d === b ? d : b;
+  e.useEffect(() => {
+    const l = (s) => {
+      o((p) => {
+        const f = te(s);
+        return p === f ? p : f;
       });
     };
-    return de((a) => s(a));
+    return Te((s) => l(s));
   }, []);
-  const l = t.useCallback(
-    (s, a) => ee(r, s, a),
+  const i = e.useCallback(
+    (l, s) => pe(r, l, s),
     [r]
   );
-  return { locale: r, tr: l };
+  return { locale: r, tr: i };
 }
-const R = window.QwenPaw.host, n = R.React, me = R.antd, A = R.getApiUrl, B = R.getApiToken, { Button: L, Card: we, Space: j, Table: he, Typography: ge, message: u, Modal: ye, Checkbox: ke } = me, { Title: Ee, Text: h, Paragraph: Se } = ge;
-function be() {
-  var t, r, c;
+const J = window.QwenPaw.host, t = J.React, De = J.antd, U = J.getApiUrl, Z = J.getApiToken, {
+  Button: F,
+  Card: $,
+  Space: x,
+  Table: Fe,
+  Typography: Ae,
+  message: u,
+  Modal: ze,
+  Checkbox: Ne,
+  Radio: X,
+  Input: ce,
+  Popconfirm: ue,
+  List: ne,
+  Tag: Oe,
+  Alert: me
+} = De, { Title: He, Text: w, Paragraph: fe } = Ae;
+function Be() {
+  var e, r, o;
   try {
-    const l = ((t = window.sessionStorage) == null ? void 0 : t.getItem("qwenpaw-agent-storage")) ?? ((r = window.localStorage) == null ? void 0 : r.getItem("qwenpaw-agent-storage"));
-    if (!l) return null;
-    const s = JSON.parse(l), a = (c = s == null ? void 0 : s.state) == null ? void 0 : c.selectedAgent;
-    return typeof a == "string" && a ? a : null;
+    const i = ((e = window.sessionStorage) == null ? void 0 : e.getItem("qwenpaw-agent-storage")) ?? ((r = window.localStorage) == null ? void 0 : r.getItem("qwenpaw-agent-storage"));
+    if (!i) return null;
+    const l = JSON.parse(i), s = (o = l == null ? void 0 : l.state) == null ? void 0 : o.selectedAgent;
+    return typeof s == "string" && s ? s : null;
   } catch {
     return null;
   }
 }
-function O() {
-  const t = {}, r = B == null ? void 0 : B();
-  r && (t.Authorization = `Bearer ${r}`);
-  const c = be();
-  return c && (t["X-Agent-Id"] = c), t;
+function q() {
+  const e = {}, r = Z == null ? void 0 : Z();
+  r && (e.Authorization = `Bearer ${r}`);
+  const o = Be();
+  return o && (e["X-Agent-Id"] = o), e;
 }
-async function X(t) {
-  const r = await fetch(A(t), { headers: O() });
+async function oe(e) {
+  const r = await fetch(U(e), { headers: q() });
   if (!r.ok)
     throw new Error(`${r.status} ${await r.text()}`);
   return r.json();
 }
-async function Y(t, r) {
-  const c = await fetch(A(t), {
+async function j(e, r) {
+  const o = await fetch(U(e), {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...O() },
+    headers: { "Content-Type": "application/json", ...q() },
     body: JSON.stringify(r)
-  }), l = await c.text();
-  let s = null;
+  }), i = await o.text();
+  let l = null;
   try {
-    s = l ? JSON.parse(l) : null;
+    l = i ? JSON.parse(i) : null;
   } catch {
-    s = { raw: l };
+    l = { raw: i };
   }
-  if (!c.ok)
-    throw new Error(typeof (s == null ? void 0 : s.detail) == "string" ? s.detail : l);
-  return s;
+  if (!o.ok)
+    throw new Error(typeof (l == null ? void 0 : l.detail) == "string" ? l.detail : i);
+  return l;
 }
-const ve = 192, Ie = 208;
-function Pe({ folder: t }) {
-  const r = n.useRef(null), [c, l] = n.useState(!1);
-  return n.useEffect(() => {
-    let s = !1;
-    l(!1);
-    const a = r.current;
-    if (!a) return;
-    const d = a.getContext("2d");
-    if (d)
+async function de(e) {
+  const r = await fetch(U(e), {
+    method: "DELETE",
+    headers: q()
+  }), o = await r.text();
+  let i = null;
+  try {
+    i = o ? JSON.parse(o) : null;
+  } catch {
+    i = { raw: o };
+  }
+  if (!r.ok)
+    throw new Error(typeof (i == null ? void 0 : i.detail) == "string" ? i.detail : o);
+  return i;
+}
+function Me(e) {
+  const r = new TextEncoder().encode(e);
+  let o = "";
+  for (let i = 0; i < r.length; i++) o += String.fromCharCode(r[i]);
+  return btoa(o).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function Ue(e) {
+  var r;
+  try {
+    if ((r = navigator.clipboard) != null && r.writeText)
+      return await navigator.clipboard.writeText(e), !0;
+  } catch {
+  }
+  try {
+    const o = document.createElement("textarea");
+    o.value = e, o.style.position = "fixed", o.style.opacity = "0", document.body.appendChild(o), o.select();
+    const i = document.execCommand("copy");
+    return document.body.removeChild(o), i;
+  } catch {
+    return !1;
+  }
+}
+function W(e) {
+  if (!e || typeof e != "number") return "";
+  try {
+    return new Date(e).toLocaleString();
+  } catch {
+    return String(e);
+  }
+}
+const qe = 192, Qe = 208;
+function _e({ folder: e }) {
+  const r = t.useRef(null), [o, i] = t.useState(!1);
+  return t.useEffect(() => {
+    let l = !1;
+    i(!1);
+    const s = r.current;
+    if (!s) return;
+    const p = s.getContext("2d");
+    if (p)
       return (async () => {
         try {
-          const b = A(
-            `/qwenpaw-pet/pets/${encodeURIComponent(t)}/spritesheet`
-          ), I = await fetch(b, { headers: O() });
-          if (!I.ok || s) throw new Error(String(I.status));
-          const T = await I.blob(), v = await createImageBitmap(T);
-          if (s) {
-            v.close();
+          const f = U(
+            `/qwenpaw-pet/pets/${encodeURIComponent(e)}/spritesheet`
+          ), k = await fetch(f, { headers: q() });
+          if (!k.ok || l) throw new Error(String(k.status));
+          const b = await k.blob(), E = await createImageBitmap(b);
+          if (l) {
+            E.close();
             return;
           }
-          const P = 96, D = 104;
-          a.width = P, a.height = D, d.imageSmoothingEnabled = !1, d.clearRect(0, 0, P, D), d.drawImage(v, 0, 0, ve, Ie, 0, 0, P, D), v.close();
+          const y = 96, T = 104;
+          s.width = y, s.height = T, p.imageSmoothingEnabled = !1, p.clearRect(0, 0, y, T), p.drawImage(E, 0, 0, qe, Qe, 0, 0, y, T), E.close();
         } catch {
-          s || l(!0);
+          l || i(!0);
         }
       })(), () => {
-        s = !0;
+        l = !0;
       };
-  }, [t]), c ? n.createElement(h, { type: "secondary" }, "—") : n.createElement("canvas", {
+  }, [e]), o ? t.createElement(w, { type: "secondary" }, "—") : t.createElement("canvas", {
     ref: r,
     width: 96,
     height: 104,
@@ -218,311 +360,676 @@ function Pe({ folder: t }) {
     }
   });
 }
-function De() {
-  const { tr: t } = fe(n), [r, c] = n.useState([]), [l, s] = n.useState(""), [a, d] = n.useState(null), [b, I] = n.useState(!1), [T, v] = n.useState(!1), [P, D] = n.useState(!0), [g, $] = n.useState(!1), [y, x] = n.useState([]), [N, F] = n.useState(!1), [G, q] = n.useState(!1), J = n.useRef(null), k = n.useCallback(async () => {
-    I(!0);
+function $e({
+  info: e,
+  onChange: r
+}) {
+  const { tr: o } = G(t), [i, l] = t.useState(null), s = (e == null ? void 0 : e.source) === "env", p = (e == null ? void 0 : e.mode) ?? "local", f = async (k) => {
+    var E;
+    const b = (E = k.target) == null ? void 0 : E.value;
+    if (!(!b || b === p)) {
+      l(b);
+      try {
+        await r(b);
+      } finally {
+        l(null);
+      }
+    }
+  };
+  return t.createElement(
+    "div",
+    null,
+    t.createElement(
+      "div",
+      { style: { marginBottom: 8 } },
+      t.createElement(w, { strong: !0 }, o("modeSection"))
+    ),
+    t.createElement(
+      X.Group,
+      {
+        value: p,
+        onChange: f,
+        disabled: s || i !== null,
+        optionType: "button",
+        buttonStyle: "solid"
+      },
+      t.createElement(X.Button, { value: "local" }, o("modeLocal")),
+      t.createElement(X.Button, { value: "remote" }, o("modeRemote"))
+    ),
+    t.createElement(
+      "div",
+      { style: { marginTop: 6 } },
+      t.createElement(
+        w,
+        { type: "secondary", style: { fontSize: 12 } },
+        o(p === "remote" ? "modeRemoteHint" : "modeLocalHint")
+      )
+    ),
+    s ? t.createElement(
+      "div",
+      { style: { marginTop: 6 } },
+      t.createElement(Oe, { color: "warning" }, o("modeLockedByEnv"))
+    ) : null
+  );
+}
+function je(e, r) {
+  return `qwenpaw-pet://pair?url=${Me(e)}&token=${encodeURIComponent(
+    r
+  )}&v=1`;
+}
+function We({
+  item: e,
+  onRevoke: r
+}) {
+  const { tr: o } = G(t), [i, l] = t.useState(!1), s = e.label || o("pairedLabelUnnamed"), p = e.lastUsedAt ? o("pairedLastSeen", { date: W(e.lastUsedAt) }) : o("pairedLastSeenNever"), f = e.expiresAt ? o("pairedExpires", { date: W(e.expiresAt) }) : "", k = e.createdAt ? o("pairedCreated", { date: W(e.createdAt) }) : "";
+  return t.createElement(
+    ne.Item,
+    {
+      actions: [
+        t.createElement(
+          ue,
+          {
+            key: "rv",
+            title: o("revokeConfirmTitle"),
+            description: o("revokeConfirmBody"),
+            okText: o("revokeConfirmOk"),
+            cancelText: o("revokeConfirmCancel"),
+            okButtonProps: { danger: !0, loading: i },
+            onConfirm: async () => {
+              l(!0);
+              try {
+                await r(e.id);
+              } finally {
+                l(!1);
+              }
+            }
+          },
+          t.createElement(
+            F,
+            { danger: !0, size: "small", loading: i },
+            o("revokeToken")
+          )
+        )
+      ]
+    },
+    t.createElement(ne.Item.Meta, {
+      title: t.createElement(
+        x,
+        null,
+        t.createElement(w, { strong: !0 }, s),
+        t.createElement(
+          w,
+          { type: "secondary", code: !0, style: { fontSize: 11 } },
+          e.id
+        )
+      ),
+      description: t.createElement(
+        "div",
+        null,
+        t.createElement(
+          "div",
+          null,
+          t.createElement(w, { type: "secondary" }, p)
+        ),
+        f || k ? t.createElement(
+          "div",
+          { style: { fontSize: 12 } },
+          t.createElement(
+            w,
+            { type: "secondary" },
+            [k, f].filter(Boolean).join(" · ")
+          )
+        ) : null
+      )
+    })
+  );
+}
+function Ge() {
+  const { tr: e } = G(t), [r, o] = t.useState([]), [i, l] = t.useState(!1), [s, p] = t.useState(!1), [f, k] = t.useState(null), [b, E] = t.useState(""), y = t.useCallback(async () => {
+    l(!0);
     try {
-      const [e, o] = await Promise.all([
-        X("/qwenpaw-pet/pets"),
-        X("/qwenpaw-pet/status")
-      ]);
-      c(e.pets || []), s(e.petsDir || ""), d(o.desktop ?? null);
-    } catch (e) {
-      u.error((e == null ? void 0 : e.message) || String(e));
+      const c = await oe("/qwenpaw-pet/pair-token");
+      o(Array.isArray(c == null ? void 0 : c.tokens) ? c.tokens : []);
+    } catch (c) {
+      u.error((c == null ? void 0 : c.message) || String(c));
     } finally {
-      I(!1);
+      l(!1);
     }
   }, []);
-  n.useEffect(() => {
-    k();
-  }, [k]);
-  const C = (a == null ? void 0 : a.ok) === !0, z = G || (a == null ? void 0 : a.starting) === !0 || (a == null ? void 0 : a.running) === !0 && !C;
-  n.useEffect(() => {
-    if (!z || C) return;
-    const e = window.setInterval(() => {
-      k();
-    }, 1500);
-    return () => window.clearInterval(e);
-  }, [z, C, k]), n.useEffect(() => {
-    C && q(!1);
-  }, [C]);
-  const te = async () => {
-    if (!z) {
-      q(!0);
+  t.useEffect(() => {
+    y();
+  }, [y]);
+  const T = async () => {
+    p(!0);
+    try {
+      const c = b.trim(), g = {};
+      c && (g.label = c);
+      const v = await j("/qwenpaw-pet/pair-token", g), z = v == null ? void 0 : v.token;
+      if (typeof z != "string" || !z)
+        throw new Error("server did not return a token");
+      const K = window.location.origin, N = je(K, z), Q = typeof (v == null ? void 0 : v.expiresAt) == "number" ? v.expiresAt : null;
+      k({ link: N, expiresAt: Q }), await Ue(N) ? u.success(e("pairLinkCopied")) : u.warning(e("pairLinkCopyFailed")), E(""), await y();
+    } catch (c) {
+      u.error((c == null ? void 0 : c.message) || String(c));
+    } finally {
+      p(!1);
+    }
+  }, P = async (c) => {
+    try {
+      await de(`/qwenpaw-pet/pair-token/${encodeURIComponent(c)}`), u.success(e("revokeSuccess")), k(null), await y();
+    } catch (g) {
+      u.error((g == null ? void 0 : g.message) || e("revokeFailed"));
+    }
+  }, B = t.useMemo(
+    () => r.filter((c) => c.lastUsedAt != null),
+    [r]
+  ), h = t.useMemo(
+    () => r.filter((c) => c.lastUsedAt == null),
+    [r]
+  ), [A, O] = t.useState(!1), H = async () => {
+    if (h.length === 0) return;
+    O(!0);
+    let c = 0, g = 0;
+    try {
+      for (const v of h)
+        try {
+          await de(
+            `/qwenpaw-pet/pair-token/${encodeURIComponent(v.id)}`
+          ), c += 1;
+        } catch {
+          g += 1;
+        }
+      k(null), g === 0 ? u.success(e("cleanupSuccess", { count: c })) : u.warning(e("cleanupFailed")), await y();
+    } finally {
+      O(!1);
+    }
+  };
+  return t.useEffect(() => {
+    if (h.length === 0 && f == null) return;
+    const c = window.setInterval(() => {
+      y();
+    }, 3e3);
+    return () => window.clearInterval(c);
+  }, [h.length, f, y]), t.createElement(
+    x,
+    { direction: "vertical", size: "large", style: { width: "100%" } },
+    t.createElement(
+      $,
+      {
+        size: "small",
+        title: e("downloadCardTitle")
+      },
+      t.createElement(
+        w,
+        { type: "secondary" },
+        e("downloadCardHint")
+      )
+    ),
+    t.createElement(
+      $,
+      {
+        size: "small",
+        title: e("pairCardHeader")
+      },
+      t.createElement(
+        x,
+        { direction: "vertical", style: { width: "100%" } },
+        t.createElement(
+          fe,
+          { type: "secondary", style: { marginBottom: 8 } },
+          e("pairCardIntro")
+        ),
+        t.createElement(
+          x,
+          { style: { width: "100%" }, wrap: !0 },
+          t.createElement(ce, {
+            placeholder: e("pairLinkLabelPlaceholder"),
+            value: b,
+            maxLength: 64,
+            style: { width: 260 },
+            onChange: (c) => E(c.target.value),
+            disabled: s
+          }),
+          t.createElement(
+            F,
+            {
+              type: "primary",
+              onClick: () => void T(),
+              loading: s
+            },
+            e("copyPairLink")
+          )
+        ),
+        f ? t.createElement(me, {
+          type: "info",
+          showIcon: !0,
+          message: f.expiresAt ? e("pairLinkExpires", {
+            date: W(f.expiresAt)
+          }) : e("pairLinkNoteReveal"),
+          description: t.createElement(
+            x,
+            { direction: "vertical", style: { width: "100%" } },
+            t.createElement(ce.TextArea, {
+              value: f.link,
+              autoSize: { minRows: 2, maxRows: 4 },
+              readOnly: !0,
+              onFocus: (c) => {
+                var g, v;
+                return (v = (g = c.target).select) == null ? void 0 : v.call(g);
+              }
+            }),
+            t.createElement(
+              w,
+              { type: "secondary", style: { fontSize: 12 } },
+              e("pairLinkNoteReveal")
+            )
+          )
+        }) : null
+      )
+    ),
+    t.createElement(
+      $,
+      {
+        size: "small",
+        title: e("pairedDevices"),
+        extra: t.createElement(
+          F,
+          {
+            size: "small",
+            onClick: () => void y(),
+            loading: i
+          },
+          e("refresh")
+        )
+      },
+      t.createElement(
+        x,
+        { direction: "vertical", style: { width: "100%" }, size: "small" },
+        B.length === 0 ? t.createElement(
+          w,
+          { type: "secondary" },
+          e("pairedNone")
+        ) : t.createElement(ne, {
+          dataSource: B,
+          renderItem: (c) => t.createElement(We, {
+            key: c.id,
+            item: c,
+            onRevoke: P
+          })
+        }),
+        h.length > 0 ? t.createElement(
+          x,
+          {
+            style: {
+              width: "100%",
+              justifyContent: "space-between"
+            },
+            wrap: !0
+          },
+          t.createElement(
+            w,
+            { type: "secondary", style: { fontSize: 12 } },
+            e("pendingLinksHint", { count: h.length })
+          ),
+          t.createElement(
+            ue,
+            {
+              title: e("cleanupConfirmTitle"),
+              description: e("cleanupConfirmBody"),
+              okText: e("revokeConfirmOk"),
+              cancelText: e("revokeConfirmCancel"),
+              okButtonProps: { danger: !0, loading: A },
+              onConfirm: () => void H()
+            },
+            t.createElement(
+              F,
+              { danger: !0, size: "small", loading: A },
+              e("cleanupPending")
+            )
+          )
+        ) : null
+      )
+    )
+  );
+}
+function Je() {
+  const { tr: e } = G(t), [r, o] = t.useState([]), [i, l] = t.useState(""), [s, p] = t.useState(null), [f, k] = t.useState(!1), [b, E] = t.useState(!1), [y, T] = t.useState(!0), [P, B] = t.useState(!1), [h, A] = t.useState([]), [O, H] = t.useState(!1), [c, g] = t.useState(!1), v = t.useRef(null), [z, K] = t.useState(
+    () => document.documentElement.classList.contains("dark-mode")
+  );
+  t.useEffect(() => {
+    const n = new MutationObserver(() => {
+      K(document.documentElement.classList.contains("dark-mode"));
+    });
+    return n.observe(document.documentElement, {
+      attributes: !0,
+      attributeFilter: ["class"]
+    }), () => n.disconnect();
+  }, []);
+  const [N, Q] = t.useState(null), C = t.useCallback(async () => {
+    k(!0);
+    try {
+      const [n, a] = await Promise.all([
+        oe("/qwenpaw-pet/pets"),
+        oe("/qwenpaw-pet/status")
+      ]);
+      o(n.pets || []), l(n.petsDir || ""), p(a.desktop ?? null), a != null && a.mode && (a != null && a.modeSource) && Q({ mode: a.mode, source: a.modeSource });
+    } catch (n) {
+      u.error((n == null ? void 0 : n.message) || String(n));
+    } finally {
+      k(!1);
+    }
+  }, []), we = t.useCallback(
+    async (n) => {
       try {
-        const e = await Y("/qwenpaw-pet/desktop/start", {}), o = e == null ? void 0 : e.desktop, i = [e == null ? void 0 : e.message, e == null ? void 0 : e.hint].filter(Boolean).join(" ");
-        e != null && e.alreadyRunning && (o != null && o.ok) ? u.success(i || t("desktopAlreadyRunning")) : (e == null ? void 0 : e.launchAttempted) === !1 && !(o != null && o.ok) ? typeof (e == null ? void 0 : e.message) == "string" && e.message.toLowerCase().includes("starting") ? u.warning(i || t("desktopStarting")) : u.error(i || t("desktopStartFailed")) : o != null && o.ok ? u.success(i || t("desktopReady")) : u.warning(i || t("desktopStarting")), await k();
-      } catch (e) {
-        u.error((e == null ? void 0 : e.message) || String(e));
+        const a = await j("/qwenpaw-pet/mode", { mode: n });
+        a != null && a.mode && (a != null && a.source) && Q({ mode: a.mode, source: a.source }), u.success(e("modeUpdated", { mode: n })), await C();
+      } catch (a) {
+        u.error((a == null ? void 0 : a.message) || e("modeUpdateFailed"));
+      }
+    },
+    [C, e]
+  );
+  t.useEffect(() => {
+    C();
+  }, [C]);
+  const M = (s == null ? void 0 : s.ok) === !0, _ = c || (s == null ? void 0 : s.starting) === !0 || (s == null ? void 0 : s.running) === !0 && !M;
+  t.useEffect(() => {
+    if (!_ || M) return;
+    const n = window.setInterval(() => {
+      C();
+    }, 1500);
+    return () => window.clearInterval(n);
+  }, [_, M, C]), t.useEffect(() => {
+    M && g(!1);
+  }, [M]);
+  const ge = async () => {
+    if (!_) {
+      g(!0);
+      try {
+        const n = await j("/qwenpaw-pet/desktop/start", {}), a = n == null ? void 0 : n.desktop, d = [n == null ? void 0 : n.message, n == null ? void 0 : n.hint].filter(Boolean).join(" ");
+        n != null && n.alreadyRunning && (a != null && a.ok) ? u.success(d || e("desktopAlreadyRunning")) : (n == null ? void 0 : n.launchAttempted) === !1 && !(a != null && a.ok) ? typeof (n == null ? void 0 : n.message) == "string" && n.message.toLowerCase().includes("starting") ? u.warning(d || e("desktopStarting")) : u.error(d || e("desktopStartFailed")) : a != null && a.ok ? u.success(d || e("desktopReady")) : u.warning(d || e("desktopStarting")), await C();
+      } catch (n) {
+        u.error((n == null ? void 0 : n.message) || String(n));
       } finally {
-        q(!1);
+        g(!1);
       }
     }
-  }, ne = () => {
-    x([]), D(!0), F(!1), v(!0);
-  }, W = async (e, o, i) => {
-    const p = o ? `${o}/${e.name}` : e.name;
-    if (e.isFile) {
-      const f = await new Promise(
-        (E, m) => e.file(E, m)
+  }, ke = () => {
+    A([]), T(!0), H(!1), E(!0);
+  }, re = async (n, a, d) => {
+    const m = a ? `${a}/${n.name}` : n.name;
+    if (n.isFile) {
+      const S = await new Promise(
+        (R, L) => n.file(R, L)
       );
-      i.push({ file: f, path: p });
+      d.push({ file: S, path: m });
       return;
     }
-    if (!e.isDirectory) return;
-    const w = e.createReader();
+    if (!n.isDirectory) return;
+    const I = n.createReader();
     for (; ; ) {
-      const f = await new Promise(
-        (E, m) => w.readEntries(E, m)
+      const S = await new Promise(
+        (R, L) => I.readEntries(R, L)
       );
-      if (f.length === 0) break;
-      for (const E of f)
-        await W(E, p, i);
+      if (S.length === 0) break;
+      for (const R of S)
+        await re(R, m, d);
     }
-  }, oe = async (e) => {
-    var w, f, E;
-    if (e.preventDefault(), F(!1), g) return;
-    const o = (w = e.dataTransfer) == null ? void 0 : w.items, i = (f = e.dataTransfer) == null ? void 0 : f.files, p = [];
-    if (o && o.length > 0)
-      for (let m = 0; m < o.length; m++) {
-        const S = o[m];
-        if (S.kind !== "file") continue;
-        const V = (E = S.webkitGetAsEntry) == null ? void 0 : E.call(S);
-        if (V)
-          await W(V, "", p);
+  }, ye = async (n) => {
+    var I, S, R;
+    if (n.preventDefault(), H(!1), P) return;
+    const a = (I = n.dataTransfer) == null ? void 0 : I.items, d = (S = n.dataTransfer) == null ? void 0 : S.files, m = [];
+    if (a && a.length > 0)
+      for (let L = 0; L < a.length; L++) {
+        const D = a[L];
+        if (D.kind !== "file") continue;
+        const se = (R = D.webkitGetAsEntry) == null ? void 0 : R.call(D);
+        if (se)
+          await re(se, "", m);
         else {
-          const H = S.getAsFile();
-          H && p.push({ file: H, path: H.name });
+          const V = D.getAsFile();
+          V && m.push({ file: V, path: V.name });
         }
       }
-    else if (i)
-      for (let m = 0; m < i.length; m++) {
-        const S = i[m];
-        p.push({ file: S, path: S.name });
+    else if (d)
+      for (let L = 0; L < d.length; L++) {
+        const D = d[L];
+        m.push({ file: D, path: D.name });
       }
-    if (p.length === 0) {
-      u.warning(t("dropFolderOrZip"));
+    if (m.length === 0) {
+      u.warning(e("dropFolderOrZip"));
       return;
     }
-    x(p);
-  }, re = (e) => {
-    e.preventDefault(), g || F(!0);
-  }, ae = (e) => {
-    e.preventDefault(), F(!1);
-  }, K = () => {
-    var e;
-    g || (e = J.current) == null || e.click();
-  }, se = (e) => {
-    var p;
-    const o = (p = e.target) == null ? void 0 : p.files;
-    if (!o || o.length === 0) return;
-    const i = [];
-    for (let w = 0; w < o.length; w++) {
-      const f = o[w];
-      i.push({ file: f, path: f.name });
+    A(m);
+  }, he = (n) => {
+    n.preventDefault(), P || H(!0);
+  }, ve = (n) => {
+    n.preventDefault(), H(!1);
+  }, ie = () => {
+    var n;
+    P || (n = v.current) == null || n.click();
+  }, Ee = (n) => {
+    var m;
+    const a = (m = n.target) == null ? void 0 : m.files;
+    if (!a || a.length === 0) return;
+    const d = [];
+    for (let I = 0; I < a.length; I++) {
+      const S = a[I];
+      d.push({ file: S, path: S.name });
     }
-    x(i), e.target.value = "";
-  }, ie = async () => {
-    if (y.length === 0) {
-      u.warning(t("importChooseFirst"));
+    A(d), n.target.value = "";
+  }, Se = async () => {
+    if (h.length === 0) {
+      u.warning(e("importChooseFirst"));
       return;
     }
-    $(!0);
+    B(!0);
     try {
-      const e = new FormData();
-      for (const { file: w, path: f } of y)
-        e.append("files", w, f);
-      e.append("replace", P ? "true" : "false");
-      const o = await fetch(A("/qwenpaw-pet/import-pet-upload"), {
+      const n = new FormData();
+      for (const { file: I, path: S } of h)
+        n.append("files", I, S);
+      n.append("replace", y ? "true" : "false");
+      const a = await fetch(U("/qwenpaw-pet/import-pet-upload"), {
         method: "POST",
-        headers: O(),
-        body: e
-      }), i = await o.text();
-      let p = null;
+        headers: q(),
+        body: n
+      }), d = await a.text();
+      let m = null;
       try {
-        p = i ? JSON.parse(i) : null;
+        m = d ? JSON.parse(d) : null;
       } catch {
-        p = { raw: i };
+        m = { raw: d };
       }
-      if (!o.ok)
-        throw new Error(typeof (p == null ? void 0 : p.detail) == "string" ? p.detail : i);
+      if (!a.ok)
+        throw new Error(typeof (m == null ? void 0 : m.detail) == "string" ? m.detail : d);
       u.success(
-        t("importSuccess", {
-          name: p.displayName || p.petId,
-          path: p.path
+        e("importSuccess", {
+          name: m.displayName || m.petId,
+          path: m.path
         })
-      ), v(!1), x([]), await k();
-    } catch (e) {
-      u.error((e == null ? void 0 : e.message) || String(e));
+      ), E(!1), A([]), await C();
+    } catch (n) {
+      u.error((n == null ? void 0 : n.message) || String(n));
     } finally {
-      $(!1);
+      B(!1);
     }
-  }, le = async (e) => {
-    const o = e.folder;
+  }, be = async (n) => {
+    const a = n.folder;
     try {
-      const i = await Y("/qwenpaw-pet/switch-pet", { pet_id: o });
-      if (i && i.ok === !1)
-        throw new Error(i.error || i.detail || t("switchFailed"));
+      const d = await j("/qwenpaw-pet/switch-pet", { pet_id: a });
+      if (d && d.ok === !1)
+        throw new Error(d.error || d.detail || e("switchFailed"));
       u.success(
-        t("switchSuccess", { name: e.displayName, petId: o })
-      ), await k();
-    } catch (i) {
-      u.error((i == null ? void 0 : i.message) || String(i));
+        e("switchSuccess", { name: n.displayName, petId: a })
+      ), await C();
+    } catch (d) {
+      u.error((d == null ? void 0 : d.message) || String(d));
     }
-  }, ce = n.useMemo(
+  }, Ce = t.useMemo(
     () => [
       {
-        title: t("colPreview"),
+        title: e("colPreview"),
         key: "preview",
         width: 112,
-        render: (e, o) => n.createElement(Pe, {
-          key: o.folder,
-          folder: o.folder
+        render: (n, a) => t.createElement(_e, {
+          key: a.folder,
+          folder: a.folder
         })
       },
-      { title: t("colName"), dataIndex: "displayName", key: "displayName" },
-      { title: t("colFolder"), dataIndex: "folder", key: "folder" },
+      { title: e("colName"), dataIndex: "displayName", key: "displayName" },
+      { title: e("colFolder"), dataIndex: "folder", key: "folder" },
       {
-        title: t("colManifestId"),
+        title: e("colManifestId"),
         key: "manifestId",
-        render: (e, o) => o.manifestId ? String(o.manifestId) : n.createElement(h, { type: "secondary" }, "—")
+        render: (n, a) => a.manifestId ? String(a.manifestId) : t.createElement(w, { type: "secondary" }, "—")
       },
       {
-        title: t("colAction"),
+        title: e("colAction"),
         key: "act",
-        render: (e, o) => n.createElement(
-          L,
+        render: (n, a) => t.createElement(
+          F,
           {
             type: "primary",
             size: "small",
-            onClick: () => void le(o)
+            onClick: () => void be(a)
           },
-          t("switch")
+          e("switch")
         )
       }
     ],
-    [t]
-  );
-  return n.createElement(
-    we,
+    [e]
+  ), Le = (N == null ? void 0 : N.mode) === "remote", Pe = [
+    t.createElement(
+      x,
+      { key: "actions", wrap: !0 },
+      t.createElement(
+        F,
+        {
+          type: "primary",
+          onClick: ge,
+          loading: c,
+          disabled: _
+        },
+        e("startDesktop")
+      ),
+      t.createElement(F, { onClick: ke }, e("importPet")),
+      t.createElement(
+        F,
+        { onClick: () => void C(), loading: f },
+        e("refresh")
+      )
+    ),
+    t.createElement(
+      "div",
+      { key: "meta" },
+      t.createElement(
+        w,
+        { type: "secondary" },
+        e("petsDirectory") + " "
+      ),
+      t.createElement(w, { code: !0 }, i || "—")
+    ),
+    t.createElement(
+      "div",
+      { key: "dh" },
+      t.createElement(w, { strong: !0 }, e("desktopHealth") + " "),
+      t.createElement(
+        w,
+        { type: s != null && s.ok ? "success" : "warning" },
+        s ? JSON.stringify(s) : e("desktopUnknown")
+      )
+    ),
+    t.createElement(Fe, {
+      key: "tbl",
+      rowKey: "folder",
+      loading: f,
+      dataSource: r,
+      columns: Ce,
+      pagination: !1,
+      locale: {
+        emptyText: e("tableEmpty")
+      }
+    })
+  ], Ie = [
+    t.createElement(Ge, { key: "pair-card" }),
+    t.createElement(me, {
+      key: "remote-note",
+      type: "info",
+      showIcon: !0,
+      message: e("remoteModeNote")
+    })
+  ];
+  return t.createElement(
+    $,
     { style: { maxWidth: 880, margin: "24px auto" } },
-    n.createElement(
-      j,
+    t.createElement(
+      x,
       { direction: "vertical", size: "large", style: { width: "100%" } },
       [
-        n.createElement(
+        t.createElement(
           "div",
           { key: "h" },
-          n.createElement(
-            Ee,
+          t.createElement(
+            He,
             { level: 3, style: { marginBottom: 4 } },
-            t("title")
+            e("title")
           ),
-          n.createElement(
-            Se,
+          t.createElement(
+            fe,
             { type: "secondary", style: { marginBottom: 0 } },
-            t("intro")
+            e("intro")
           )
         ),
-        n.createElement(
-          j,
-          { key: "actions", wrap: !0 },
-          n.createElement(
-            L,
-            {
-              type: "primary",
-              onClick: te,
-              loading: G,
-              disabled: z
-            },
-            t("startDesktop")
-          ),
-          n.createElement(L, { onClick: ne }, t("importPet")),
-          n.createElement(
-            L,
-            { onClick: () => void k(), loading: b },
-            t("refresh")
-          )
-        ),
-        n.createElement(
-          "div",
-          { key: "meta" },
-          n.createElement(
-            h,
-            { type: "secondary" },
-            t("petsDirectory") + " "
-          ),
-          n.createElement(h, { code: !0 }, l || "—")
-        ),
-        n.createElement(
-          "div",
-          { key: "dh" },
-          n.createElement(
-            h,
-            { strong: !0 },
-            t("desktopHealth") + " "
-          ),
-          n.createElement(
-            h,
-            { type: a != null && a.ok ? "success" : "warning" },
-            a ? JSON.stringify(a) : t("desktopUnknown")
-          )
-        ),
-        n.createElement(he, {
-          key: "tbl",
-          rowKey: "folder",
-          loading: b,
-          dataSource: r,
-          columns: ce,
-          pagination: !1,
-          locale: {
-            emptyText: t("tableEmpty")
-          }
+        t.createElement($e, {
+          key: "mode",
+          info: N,
+          onChange: we
         }),
-        n.createElement(
-          ye,
+        ...Le ? Ie : Pe,
+        t.createElement(
+          ze,
           {
             key: "import-modal",
-            title: t("modalImportTitle"),
-            open: T,
-            onOk: () => void ie(),
-            okText: t("modalImportOk"),
-            okButtonProps: { loading: g },
-            cancelButtonProps: { disabled: g },
+            title: e("modalImportTitle"),
+            open: b,
+            onOk: () => void Se(),
+            okText: e("modalImportOk"),
+            okButtonProps: { loading: P },
+            cancelButtonProps: { disabled: P },
             onCancel: () => {
-              g || v(!1);
+              P || E(!1);
             },
             destroyOnClose: !0
           },
-          n.createElement(
-            j,
+          t.createElement(
+            x,
             { direction: "vertical", style: { width: "100%" } },
-            n.createElement(
+            t.createElement(
               "div",
               {
                 role: "button",
                 tabIndex: 0,
-                onClick: K,
-                onDrop: oe,
-                onDragOver: re,
-                onDragLeave: ae,
-                onKeyDown: (e) => {
-                  (e.key === "Enter" || e.key === " ") && (e.preventDefault(), K());
+                onClick: ie,
+                onDrop: ye,
+                onDragOver: he,
+                onDragLeave: ve,
+                onKeyDown: (n) => {
+                  (n.key === "Enter" || n.key === " ") && (n.preventDefault(), ie());
                 },
                 style: {
-                  border: `2px dashed ${N ? "#1677ff" : "#d9d9d9"}`,
+                  border: `2px dashed ${O ? "#1677ff" : z ? "rgba(255,255,255,0.15)" : "#d9d9d9"}`,
                   borderRadius: 8,
                   padding: "32px 16px",
                   textAlign: "center",
-                  cursor: g ? "not-allowed" : "pointer",
-                  background: N ? "rgba(22, 119, 255, 0.06)" : "#fafafa",
+                  cursor: P ? "not-allowed" : "pointer",
+                  background: O ? "rgba(22, 119, 255, 0.06)" : z ? "rgba(255,255,255,0.04)" : "#fafafa",
                   transition: "border-color .15s ease, background .15s ease",
                   userSelect: "none",
-                  color: N ? "#1677ff" : void 0
+                  color: O ? "#1677ff" : z ? "rgba(255,255,255,0.85)" : void 0
                 }
               },
               // Line-art cube icon (matches the dropzone reference)
-              n.createElement(
+              t.createElement(
                 "svg",
                 {
                   width: 48,
@@ -539,20 +1046,20 @@ function De() {
                     opacity: 0.7
                   }
                 },
-                n.createElement("path", {
+                t.createElement("path", {
                   d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
                 }),
-                n.createElement("polyline", {
+                t.createElement("polyline", {
                   points: "3.27 6.96 12 12.01 20.73 6.96"
                 }),
-                n.createElement("line", {
+                t.createElement("line", {
                   x1: "12",
                   y1: "22.08",
                   x2: "12",
                   y2: "12"
                 })
               ),
-              n.createElement(
+              t.createElement(
                 "div",
                 {
                   style: {
@@ -561,41 +1068,41 @@ function De() {
                     marginBottom: 4
                   }
                 },
-                t("dropzoneTitle")
+                e("dropzoneTitle")
               ),
-              n.createElement(
-                h,
+              t.createElement(
+                w,
                 { type: "secondary" },
-                t("dropzoneHint")
+                e("dropzoneHint")
               )
             ),
-            n.createElement("input", {
-              ref: J,
+            t.createElement("input", {
+              ref: v,
               type: "file",
               accept: ".zip,application/zip",
               style: { display: "none" },
-              onChange: se
+              onChange: Ee
             }),
-            y.length === 0 ? n.createElement(
-              h,
+            h.length === 0 ? t.createElement(
+              w,
               { type: "secondary", style: { fontSize: 12 } },
-              t("importFormatHint")
-            ) : n.createElement(
-              h,
+              e("importFormatHint")
+            ) : t.createElement(
+              w,
               null,
-              y.length === 1 ? t("selectedOne", { path: y[0].path }) : t("selectedMany", {
-                count: y.length,
-                root: y[0].path.split("/")[0] || y[0].path
+              h.length === 1 ? e("selectedOne", { path: h[0].path }) : e("selectedMany", {
+                count: h.length,
+                root: h[0].path.split("/")[0] || h[0].path
               })
             ),
-            n.createElement(
-              ke,
+            t.createElement(
+              Ne,
               {
-                checked: P,
-                onChange: (e) => D(!!e.target.checked),
-                disabled: g
+                checked: y,
+                onChange: (n) => T(!!n.target.checked),
+                disabled: P
               },
-              t("importReplace")
+              e("importReplace")
             )
           )
         )
@@ -603,22 +1110,22 @@ function De() {
     )
   );
 }
-class Ce {
+class Ke {
   constructor() {
     this.id = "qwenpaw-pet";
   }
   setup() {
-    var c, l;
-    const r = Q();
-    (l = (c = window.QwenPaw).registerRoutes) == null || l.call(c, this.id, [
+    var o, i;
+    const r = te();
+    (i = (o = window.QwenPaw).registerRoutes) == null || i.call(o, this.id, [
       {
         path: "/plugin/qwenpaw-pet/pets",
-        component: De,
-        label: ee(r, "routeLabel"),
+        component: Je,
+        label: pe(r, "routeLabel"),
         icon: "🐾",
         priority: 42
       }
     ]);
   }
 }
-new Ce().setup();
+new Ke().setup();

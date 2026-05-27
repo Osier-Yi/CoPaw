@@ -3,18 +3,28 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPixmap
-from PySide6.QtWidgets import QApplication, QMenu, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QInputDialog,
+    QMenu,
+    QMessageBox,
+    QWidget,
+)
 
 from . import runtime
+from .pair_link import decode_pair_link
 from .pet_package import validate_pet_package
 from .sprites import CELL_HEIGHT, CELL_WIDTH, STATE_SPECS, state_for_event
+
+logger = logging.getLogger(__name__)
 
 # Query lifecycle events that may arrive after ``approval.pending`` and
 # would clobber the approval bubble or animation. ``tool.result`` and
@@ -129,11 +139,20 @@ def _ends_approval_wait(ev_name: str | None) -> bool:
 class PetWindow(QWidget):
     """Small draggable always-on-top pet window."""
 
-    def __init__(self, pet_dir: Path, scale: float = 0.58):
+    def __init__(
+        self,
+        pet_dir: Path,
+        scale: float = 0.58,
+        on_pair_changed: Callable[[], None] | None = None,
+    ):
         super().__init__()
         manifest, sheet_path = validate_pet_package(pet_dir)
         self.pet_dir = pet_dir
         self.manifest = manifest
+        # Called after the user pastes a pairing link (or unpairs) so
+        # app.py can stop/start the SSE consumer without a process
+        # restart. ``None`` is fine — the menu actions just won't appear.
+        self._on_pair_changed = on_pair_changed
         self.sheet = QPixmap(str(sheet_path))
         if self.sheet.isNull():
             raise RuntimeError(f"could not load spritesheet: {sheet_path}")
@@ -494,5 +513,133 @@ class PetWindow(QWidget):
         menu.addAction("Thinking", lambda: self.set_state("running"))
         menu.addAction("Waiting", lambda: self.set_state("waiting"))
         menu.addSeparator()
+        # Remote pairing — surfaces the current state so the user knows
+        # whether they're already wired up to a cloud QwenPaw.
+        current = runtime.read_remote_config()
+        if current:
+            host = current["url"].split("//", 1)[-1].rstrip("/")
+            menu.addAction(f"Paired with {host}").setEnabled(False)
+            menu.addAction("Paste pairing link…", self._paste_pair_link)
+            menu.addAction("Unpair", self._unpair)
+        else:
+            menu.addAction("Paste pairing link…", self._paste_pair_link)
+        menu.addSeparator()
         menu.addAction("Quit", QApplication.instance().quit)
         menu.exec(pos)
+
+    def _paste_pair_link(self) -> None:
+        """Pop an input dialog for a ``qwenpaw-pet://pair?...`` link.
+
+        Multi-line input so the (~150-char) URL is fully visible while
+        pasting. On success: writes ``remote.json`` and asks app.py to
+        (re)start the SSE consumer; on parse failure: shows the error.
+
+        A single desktop process can only hold one pairing at a time, so
+        re-pasting overwrites — and we revoke the previous token on its
+        server first to keep the cloud "Paired devices" list honest.
+        """
+        link, ok = QInputDialog.getMultiLineText(
+            self,
+            "Pair with cloud QwenPaw",
+            "Paste the qwenpaw-pet://pair?... link copied from the\n"
+            "Pet sidebar in your cloud QwenPaw console:",
+            "",
+        )
+        if not ok:
+            return
+        link = link.strip()
+        if not link:
+            return
+        try:
+            url, token = decode_pair_link(link)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid pair link", str(exc))
+            return
+        # Capture the previous pairing *before* overwriting so we can
+        # tell the old server to forget it. Fire-and-forget — if the old
+        # server is unreachable we still want the local re-pair to
+        # succeed; the stale token will time out on its own.
+        previous = runtime.read_remote_config()
+        try:
+            runtime.write_remote_config(url, token)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Failed to save pairing",
+                f"Could not write remote.json: {exc}",
+            )
+            return
+        if previous and (
+            previous.get("url") != url or previous.get("token") != token
+        ):
+            _revoke_on_server(previous["url"], previous["token"])
+        if self._on_pair_changed is not None:
+            try:
+                self._on_pair_changed()
+            except Exception:
+                logger.exception("on_pair_changed callback failed")
+        QMessageBox.information(
+            self,
+            "Paired",
+            f"Now subscribing to {url}.\nEvents should arrive shortly.",
+        )
+
+    def _unpair(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Unpair",
+            "Disconnect from the cloud QwenPaw and forget the saved token?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        # Snapshot before clearing so we can revoke server-side too —
+        # otherwise the cloud sidebar would keep showing this device as
+        # "paired but offline" until its 30-day TTL expires.
+        previous = runtime.read_remote_config()
+        runtime.clear_remote_config()
+        if previous:
+            _revoke_on_server(previous["url"], previous["token"])
+        if self._on_pair_changed is not None:
+            try:
+                self._on_pair_changed()
+            except Exception:
+                logger.exception("on_pair_changed callback failed")
+
+
+def _revoke_on_server(url: str, token: str) -> None:
+    """Best-effort ``DELETE /pair-token/self`` on a remote QwenPaw.
+
+    Runs in a daemon thread so a slow / unreachable cloud doesn't freeze
+    the Qt UI thread. Failures are logged but never raised: the local
+    pairing state has already changed by the time we get here, and the
+    server token will hit its TTL on its own if we can't reach it.
+    """
+    import threading
+
+    def _do() -> None:
+        try:
+            import httpx
+
+            with httpx.Client(timeout=5.0, trust_env=True) as client:
+                resp = client.delete(
+                    f"{url.rstrip('/')}/api/qwenpaw-pet/pair-token/self",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                if resp.status_code >= 400:
+                    logger.warning(
+                        "revoke on %s returned HTTP %s",
+                        url,
+                        resp.status_code,
+                    )
+                else:
+                    logger.info("revoked pairing token on %s", url)
+        except Exception:
+            logger.warning("revoke on %s failed", url, exc_info=True)
+
+    threading.Thread(
+        target=_do,
+        name="qwenpaw-pet-revoke",
+        daemon=True,
+    ).start()

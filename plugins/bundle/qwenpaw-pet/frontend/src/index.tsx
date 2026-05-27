@@ -23,8 +23,22 @@ const antd = host.antd;
 const getApiUrl = host.getApiUrl;
 const getApiToken = host.getApiToken;
 
-const { Button, Card, Space, Table, Typography, message, Modal, Checkbox } =
-  antd;
+const {
+  Button,
+  Card,
+  Space,
+  Table,
+  Typography,
+  message,
+  Modal,
+  Checkbox,
+  Radio,
+  Input,
+  Popconfirm,
+  List,
+  Tag,
+  Alert,
+} = antd;
 // Renamed Typography.Text to AntText: ``Text`` collides with the
 // global DOM ``Text`` interface from ``lib.dom.d.ts``.
 const { Title, Text: AntText, Paragraph } = Typography;
@@ -100,6 +114,70 @@ async function apiPost(path: string, body: object): Promise<any> {
   return data;
 }
 
+async function apiDelete(path: string): Promise<any> {
+  const res = await fetch(getApiUrl(path), {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+  if (!res.ok) {
+    throw new Error(typeof data?.detail === "string" ? data.detail : text);
+  }
+  return data;
+}
+
+/** Encode a UTF-8 string as base64url (no padding) — matches Python's
+ *  ``base64.urlsafe_b64encode(...).rstrip(b"=")`` used by the desktop
+ *  ``_decode_pair_link`` parser. */
+function toBase64Url(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** Best-effort copy to clipboard with a textarea fallback for
+ *  non-secure-context browsers (HTTP, file://) where ``navigator.clipboard``
+ *  is unavailable. Returns whether the copy actually succeeded. */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to textarea fallback */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function formatTimestamp(ms: number | null | undefined): string {
+  if (!ms || typeof ms !== "number") return "";
+  try {
+    return new Date(ms).toLocaleString();
+  } catch {
+    return String(ms);
+  }
+}
+
 /** Codex atlas cell size (row 0 col 0 = idle frame 1). */
 const CELL_W = 192;
 const CELL_H = 208;
@@ -164,6 +242,448 @@ function PetThumb({ folder }: { folder: string }) {
   });
 }
 
+type ModeValue = "local" | "remote";
+type ModeSource = "env" | "config" | "auto";
+type ModeInfo = { mode: ModeValue; source: ModeSource };
+
+type PairedToken = {
+  id: string;
+  label: string | null;
+  createdAt: number | null;
+  expiresAt: number | null;
+  lastUsedAt: number | null;
+};
+
+function ModeSwitcher({
+  info,
+  onChange,
+}: {
+  info: ModeInfo | null;
+  onChange: (mode: ModeValue) => Promise<void> | void;
+}) {
+  const { tr } = usePetLocale(React);
+  const [pending, setPending] = React.useState<ModeValue | null>(null);
+  const locked = info?.source === "env";
+  const current = info?.mode ?? "local";
+
+  const handleChange = async (e: any) => {
+    const next = e.target?.value as ModeValue;
+    if (!next || next === current) return;
+    setPending(next);
+    try {
+      await onChange(next);
+    } finally {
+      setPending(null);
+    }
+  };
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "div",
+      { style: { marginBottom: 8 } },
+      React.createElement(AntText, { strong: true }, tr("modeSection")),
+    ),
+    React.createElement(
+      Radio.Group,
+      {
+        value: current,
+        onChange: handleChange,
+        disabled: locked || pending !== null,
+        optionType: "button",
+        buttonStyle: "solid",
+      },
+      React.createElement(Radio.Button, { value: "local" }, tr("modeLocal")),
+      React.createElement(Radio.Button, { value: "remote" }, tr("modeRemote")),
+    ),
+    React.createElement(
+      "div",
+      { style: { marginTop: 6 } },
+      React.createElement(
+        AntText,
+        { type: "secondary", style: { fontSize: 12 } },
+        current === "remote" ? tr("modeRemoteHint") : tr("modeLocalHint"),
+      ),
+    ),
+    locked
+      ? React.createElement(
+          "div",
+          { style: { marginTop: 6 } },
+          React.createElement(Tag, { color: "warning" }, tr("modeLockedByEnv")),
+        )
+      : null,
+  );
+}
+
+/** Composes the deep-link the desktop app expects:
+ *  ``qwenpaw-pet://pair?url=<b64u(origin)>&token=<plaintext>&v=1`` */
+function buildPairLink(originUrl: string, token: string): string {
+  const encoded = toBase64Url(originUrl);
+  return `qwenpaw-pet://pair?url=${encoded}&token=${encodeURIComponent(
+    token,
+  )}&v=1`;
+}
+
+function PairedDeviceItem({
+  item,
+  onRevoke,
+}: {
+  item: PairedToken;
+  onRevoke: (id: string) => Promise<void>;
+}) {
+  const { tr } = usePetLocale(React);
+  const [revoking, setRevoking] = React.useState(false);
+  const label = item.label || tr("pairedLabelUnnamed");
+  const lastSeen = item.lastUsedAt
+    ? tr("pairedLastSeen", { date: formatTimestamp(item.lastUsedAt) })
+    : tr("pairedLastSeenNever");
+  const expires = item.expiresAt
+    ? tr("pairedExpires", { date: formatTimestamp(item.expiresAt) })
+    : "";
+  const created = item.createdAt
+    ? tr("pairedCreated", { date: formatTimestamp(item.createdAt) })
+    : "";
+
+  return React.createElement(
+    List.Item,
+    {
+      actions: [
+        React.createElement(
+          Popconfirm,
+          {
+            key: "rv",
+            title: tr("revokeConfirmTitle"),
+            description: tr("revokeConfirmBody"),
+            okText: tr("revokeConfirmOk"),
+            cancelText: tr("revokeConfirmCancel"),
+            okButtonProps: { danger: true, loading: revoking },
+            onConfirm: async () => {
+              setRevoking(true);
+              try {
+                await onRevoke(item.id);
+              } finally {
+                setRevoking(false);
+              }
+            },
+          },
+          React.createElement(
+            Button,
+            { danger: true, size: "small", loading: revoking },
+            tr("revokeToken"),
+          ),
+        ),
+      ],
+    },
+    React.createElement(List.Item.Meta, {
+      title: React.createElement(
+        Space,
+        null,
+        React.createElement(AntText, { strong: true }, label),
+        React.createElement(
+          AntText,
+          { type: "secondary", code: true, style: { fontSize: 11 } },
+          item.id,
+        ),
+      ),
+      description: React.createElement(
+        "div",
+        null,
+        React.createElement(
+          "div",
+          null,
+          React.createElement(AntText, { type: "secondary" }, lastSeen),
+        ),
+        expires || created
+          ? React.createElement(
+              "div",
+              { style: { fontSize: 12 } },
+              React.createElement(
+                AntText,
+                { type: "secondary" },
+                [created, expires].filter(Boolean).join(" · "),
+              ),
+            )
+          : null,
+      ),
+    }),
+  );
+}
+
+function PairCard() {
+  const { tr } = usePetLocale(React);
+  const [tokens, setTokens] = React.useState<PairedToken[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [issuing, setIssuing] = React.useState(false);
+  const [pendingLink, setPendingLink] = React.useState<{
+    link: string;
+    expiresAt: number | null;
+  } | null>(null);
+  const [label, setLabel] = React.useState("");
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiGet("/qwenpaw-pet/pair-token");
+      setTokens(Array.isArray(data?.tokens) ? data.tokens : []);
+    } catch (e: any) {
+      message.error(e?.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const issueAndCopy = async () => {
+    setIssuing(true);
+    try {
+      const trimmed = label.trim();
+      const body: Record<string, unknown> = {};
+      if (trimmed) body.label = trimmed;
+      const res = await apiPost("/qwenpaw-pet/pair-token", body);
+      const plaintext = res?.token;
+      if (typeof plaintext !== "string" || !plaintext) {
+        throw new Error("server did not return a token");
+      }
+      const origin = window.location.origin;
+      const link = buildPairLink(origin, plaintext);
+      const expiresAt =
+        typeof res?.expiresAt === "number" ? res.expiresAt : null;
+      setPendingLink({ link, expiresAt });
+      const ok = await copyToClipboard(link);
+      if (ok) {
+        message.success(tr("pairLinkCopied"));
+      } else {
+        message.warning(tr("pairLinkCopyFailed"));
+      }
+      setLabel("");
+      await refresh();
+    } catch (e: any) {
+      message.error(e?.message || String(e));
+    } finally {
+      setIssuing(false);
+    }
+  };
+
+  const revoke = async (id: string) => {
+    try {
+      await apiDelete(`/qwenpaw-pet/pair-token/${encodeURIComponent(id)}`);
+      message.success(tr("revokeSuccess"));
+      // Hide the cached one-shot link if it matched the revoked token —
+      // we cannot prove it without the plaintext, so just clear on any
+      // revoke to avoid showing a stale "valid" link.
+      setPendingLink(null);
+      await refresh();
+    } catch (e: any) {
+      message.error(e?.message || tr("revokeFailed"));
+    }
+  };
+
+  // "Paired devices" should be the ones that actually connected at least
+  // once. Tokens that were issued but never used are just outstanding
+  // links — surface them separately so the list does not grow on every
+  // click of "Copy pairing link".
+  const pairedTokens = React.useMemo(
+    () => tokens.filter((t) => t.lastUsedAt != null),
+    [tokens],
+  );
+  const pendingTokens = React.useMemo(
+    () => tokens.filter((t) => t.lastUsedAt == null),
+    [tokens],
+  );
+
+  const [cleaning, setCleaning] = React.useState(false);
+  const cleanupPending = async () => {
+    if (pendingTokens.length === 0) return;
+    setCleaning(true);
+    let succeeded = 0;
+    let failed = 0;
+    try {
+      for (const t of pendingTokens) {
+        try {
+          await apiDelete(
+            `/qwenpaw-pet/pair-token/${encodeURIComponent(t.id)}`,
+          );
+          succeeded += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      setPendingLink(null);
+      if (failed === 0) {
+        message.success(tr("cleanupSuccess", { count: succeeded }));
+      } else {
+        message.warning(tr("cleanupFailed"));
+      }
+      await refresh();
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  // While there are unused links outstanding (or we just issued one), a
+  // desktop may be about to pair — poll lightly so the "Paired devices"
+  // list populates without needing a manual refresh click.
+  React.useEffect(() => {
+    if (pendingTokens.length === 0 && pendingLink == null) return;
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [pendingTokens.length, pendingLink, refresh]);
+
+  return React.createElement(
+    Space,
+    { direction: "vertical", size: "large", style: { width: "100%" } },
+    React.createElement(
+      Card,
+      {
+        size: "small",
+        title: tr("downloadCardTitle"),
+      },
+      React.createElement(
+        AntText,
+        { type: "secondary" },
+        tr("downloadCardHint"),
+      ),
+    ),
+    React.createElement(
+      Card,
+      {
+        size: "small",
+        title: tr("pairCardHeader"),
+      },
+      React.createElement(
+        Space,
+        { direction: "vertical", style: { width: "100%" } },
+        React.createElement(
+          Paragraph,
+          { type: "secondary", style: { marginBottom: 8 } },
+          tr("pairCardIntro"),
+        ),
+        React.createElement(
+          Space,
+          { style: { width: "100%" }, wrap: true },
+          React.createElement(Input, {
+            placeholder: tr("pairLinkLabelPlaceholder"),
+            value: label,
+            maxLength: 64,
+            style: { width: 260 },
+            onChange: (e: any) => setLabel(e.target.value),
+            disabled: issuing,
+          }),
+          React.createElement(
+            Button,
+            {
+              type: "primary",
+              onClick: () => void issueAndCopy(),
+              loading: issuing,
+            },
+            tr("copyPairLink"),
+          ),
+        ),
+        pendingLink
+          ? React.createElement(Alert, {
+              type: "info",
+              showIcon: true,
+              message: pendingLink.expiresAt
+                ? tr("pairLinkExpires", {
+                    date: formatTimestamp(pendingLink.expiresAt),
+                  })
+                : tr("pairLinkNoteReveal"),
+              description: React.createElement(
+                Space,
+                { direction: "vertical", style: { width: "100%" } },
+                React.createElement(Input.TextArea, {
+                  value: pendingLink.link,
+                  autoSize: { minRows: 2, maxRows: 4 },
+                  readOnly: true,
+                  onFocus: (e: any) => e.target.select?.(),
+                }),
+                React.createElement(
+                  AntText,
+                  { type: "secondary", style: { fontSize: 12 } },
+                  tr("pairLinkNoteReveal"),
+                ),
+              ),
+            })
+          : null,
+      ),
+    ),
+    React.createElement(
+      Card,
+      {
+        size: "small",
+        title: tr("pairedDevices"),
+        extra: React.createElement(
+          Button,
+          {
+            size: "small",
+            onClick: () => void refresh(),
+            loading,
+          },
+          tr("refresh"),
+        ),
+      },
+      React.createElement(
+        Space,
+        { direction: "vertical", style: { width: "100%" }, size: "small" },
+        pairedTokens.length === 0
+          ? React.createElement(
+              AntText,
+              { type: "secondary" },
+              tr("pairedNone"),
+            )
+          : React.createElement(List, {
+              dataSource: pairedTokens,
+              renderItem: (item: PairedToken) =>
+                React.createElement(PairedDeviceItem, {
+                  key: item.id,
+                  item,
+                  onRevoke: revoke,
+                }),
+            }),
+        pendingTokens.length > 0
+          ? React.createElement(
+              Space,
+              {
+                style: {
+                  width: "100%",
+                  justifyContent: "space-between",
+                },
+                wrap: true,
+              },
+              React.createElement(
+                AntText,
+                { type: "secondary", style: { fontSize: 12 } },
+                tr("pendingLinksHint", { count: pendingTokens.length }),
+              ),
+              React.createElement(
+                Popconfirm,
+                {
+                  title: tr("cleanupConfirmTitle"),
+                  description: tr("cleanupConfirmBody"),
+                  okText: tr("revokeConfirmOk"),
+                  cancelText: tr("revokeConfirmCancel"),
+                  okButtonProps: { danger: true, loading: cleaning },
+                  onConfirm: () => void cleanupPending(),
+                },
+                React.createElement(
+                  Button,
+                  { danger: true, size: "small", loading: cleaning },
+                  tr("cleanupPending"),
+                ),
+              ),
+            )
+          : null,
+      ),
+    ),
+  );
+}
+
 function PetControlPage() {
   const { tr } = usePetLocale(React);
   const [pets, setPets] = React.useState<PetRow[]>([]);
@@ -195,6 +715,8 @@ function PetControlPage() {
     return () => observer.disconnect();
   }, []);
 
+  const [modeInfo, setModeInfo] = React.useState<ModeInfo | null>(null);
+
   const refresh = React.useCallback(async () => {
     setLoading(true);
     try {
@@ -205,12 +727,31 @@ function PetControlPage() {
       setPets(petData.pets || []);
       setPetsDir(petData.petsDir || "");
       setDesktop(st.desktop ?? null);
+      if (st?.mode && st?.modeSource) {
+        setModeInfo({ mode: st.mode, source: st.modeSource });
+      }
     } catch (e: any) {
       message.error(e?.message || String(e));
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const onModeChange = React.useCallback(
+    async (next: ModeValue) => {
+      try {
+        const res = await apiPost("/qwenpaw-pet/mode", { mode: next });
+        if (res?.mode && res?.source) {
+          setModeInfo({ mode: res.mode, source: res.source });
+        }
+        message.success(tr("modeUpdated", { mode: next }));
+        await refresh();
+      } catch (e: any) {
+        message.error(e?.message || tr("modeUpdateFailed"));
+      }
+    },
+    [refresh, tr],
+  );
 
   React.useEffect(() => {
     void refresh();
@@ -460,6 +1001,72 @@ function PetControlPage() {
     [tr],
   );
 
+  const isRemote = modeInfo?.mode === "remote";
+
+  const localSection = [
+    React.createElement(
+      Space,
+      { key: "actions", wrap: true },
+      React.createElement(
+        Button,
+        {
+          type: "primary",
+          onClick: startDesktop,
+          loading: startingDesktop,
+          disabled: desktopBusy,
+        },
+        tr("startDesktop"),
+      ),
+      React.createElement(Button, { onClick: openImport }, tr("importPet")),
+      React.createElement(
+        Button,
+        { onClick: () => void refresh(), loading },
+        tr("refresh"),
+      ),
+    ),
+    React.createElement(
+      "div",
+      { key: "meta" },
+      React.createElement(
+        AntText,
+        { type: "secondary" },
+        tr("petsDirectory") + " ",
+      ),
+      React.createElement(AntText, { code: true }, petsDir || "—"),
+    ),
+    React.createElement(
+      "div",
+      { key: "dh" },
+      React.createElement(AntText, { strong: true }, tr("desktopHealth") + " "),
+      React.createElement(
+        AntText,
+        { type: desktop?.ok ? "success" : "warning" },
+        desktop ? JSON.stringify(desktop) : tr("desktopUnknown"),
+      ),
+    ),
+    React.createElement(Table, {
+      key: "tbl",
+      rowKey: "folder",
+      loading,
+      dataSource: pets,
+      columns,
+      pagination: false,
+      locale: {
+        emptyText: tr("tableEmpty"),
+      },
+    }),
+  ];
+
+  const remoteSection = [
+    React.createElement(PairCard, { key: "pair-card" }),
+    React.createElement(Alert, {
+      key: "remote-note",
+      type: "info",
+      showIcon: true,
+      message: tr("remoteModeNote"),
+    }),
+  ];
+
   return React.createElement(
     Card,
     { style: { maxWidth: 880, margin: "24px auto" } },
@@ -481,61 +1088,12 @@ function PetControlPage() {
             tr("intro"),
           ),
         ),
-        React.createElement(
-          Space,
-          { key: "actions", wrap: true },
-          React.createElement(
-            Button,
-            {
-              type: "primary",
-              onClick: startDesktop,
-              loading: startingDesktop,
-              disabled: desktopBusy,
-            },
-            tr("startDesktop"),
-          ),
-          React.createElement(Button, { onClick: openImport }, tr("importPet")),
-          React.createElement(
-            Button,
-            { onClick: () => void refresh(), loading },
-            tr("refresh"),
-          ),
-        ),
-        React.createElement(
-          "div",
-          { key: "meta" },
-          React.createElement(
-            AntText,
-            { type: "secondary" },
-            tr("petsDirectory") + " ",
-          ),
-          React.createElement(AntText, { code: true }, petsDir || "—"),
-        ),
-        React.createElement(
-          "div",
-          { key: "dh" },
-          React.createElement(
-            AntText,
-            { strong: true },
-            tr("desktopHealth") + " ",
-          ),
-          React.createElement(
-            AntText,
-            { type: desktop?.ok ? "success" : "warning" },
-            desktop ? JSON.stringify(desktop) : tr("desktopUnknown"),
-          ),
-        ),
-        React.createElement(Table, {
-          key: "tbl",
-          rowKey: "folder",
-          loading,
-          dataSource: pets,
-          columns,
-          pagination: false,
-          locale: {
-            emptyText: tr("tableEmpty"),
-          },
+        React.createElement(ModeSwitcher, {
+          key: "mode",
+          info: modeInfo,
+          onChange: onModeChange,
         }),
+        ...(isRemote ? remoteSection : localSection),
         React.createElement(
           Modal,
           {

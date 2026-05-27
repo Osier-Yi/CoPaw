@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication
 
 from . import runtime
 from .pet_package import resolve_pet_dir
+from .remote_client import RemoteEventClient
 from .server import build_app
 from .window import PetWindow
 
@@ -76,7 +77,26 @@ def run_desktop(pet_dir: Path, host: str, port: int, scale: float) -> int:
     runtime.write_bridge_url(f"http://{display_host}:{port}")
 
     qt_app = QApplication(sys.argv)
-    window = PetWindow(pet_dir, scale=scale)
+
+    # Hold the SSE client in a mutable cell so the in-app "Paste pairing
+    # link" action can restart it without forcing the user to relaunch
+    # the desktop process. ``_maybe_start_remote_client`` reads the
+    # current ``remote.json``, so the closure just stops the old client
+    # (if any) and re-runs it after the config file has been rewritten.
+    remote_holder: list[RemoteEventClient | None] = [None]
+
+    def _restart_remote_client() -> None:
+        old = remote_holder[0]
+        if old is not None:
+            old.stop()
+            remote_holder[0] = None
+        remote_holder[0] = _maybe_start_remote_client()
+
+    window = PetWindow(
+        pet_dir,
+        scale=scale,
+        on_pair_changed=_restart_remote_client,
+    )
 
     # SIGTERM is what the QwenPaw plugin sends on shutdown (see
     # ``emitter.stop_desktop``). Python's default handler would let the
@@ -126,10 +146,15 @@ def run_desktop(pet_dir: Path, host: str, port: int, scale: float) -> int:
         daemon=True,
     )
     server_thread.start()
+
+    remote_holder[0] = _maybe_start_remote_client()
+
     window.show()
     try:
         return qt_app.exec()
     finally:
+        if remote_holder[0] is not None:
+            remote_holder[0].stop()
         # Best-effort PID file cleanup so a follow-up health probe
         # immediately sees ``running=False`` and the next QwenPaw start
         # can autostart a fresh desktop without confusion.
@@ -137,6 +162,43 @@ def run_desktop(pet_dir: Path, host: str, port: int, scale: float) -> int:
             runtime.pid_path().unlink(missing_ok=True)
         except OSError:
             logger.exception("Failed to remove pid file at shutdown")
+
+
+def _maybe_start_remote_client() -> RemoteEventClient | None:
+    """If the user paired with a cloud QwenPaw, start the SSE consumer.
+
+    Returns the client (so the caller can ``stop()`` it on shutdown), or
+    ``None`` if no pairing exists. The thread is a daemon — we never
+    block QwenPaw's exit on its shutdown handshake.
+    """
+    cfg = runtime.read_remote_config()
+    if not cfg:
+        return None
+
+    def _state_change(state: str, detail: str | None) -> None:
+        # Surface state through an internal event so the pet window
+        # could render a "disconnected" badge later. We don't change
+        # the sprite for it — staying silent on transient blips matches
+        # what users expect from a chat-app icon.
+        logger.info(
+            "remote SSE state=%s detail=%s",
+            state,
+            detail or "",
+        )
+
+    client = RemoteEventClient(
+        base_url=cfg["url"],
+        token=cfg["token"],
+        on_event=enqueue_pet_event,
+        on_state=_state_change,
+    )
+    threading.Thread(
+        target=client.run_forever,
+        name="qwenpaw-pet-remote-sse",
+        daemon=True,
+    ).start()
+    logger.info("Remote SSE client started for %s", cfg["url"])
+    return client
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

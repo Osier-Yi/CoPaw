@@ -13,6 +13,7 @@ import urllib.request
 from pathlib import Path
 
 from . import runtime
+from .pair_link import decode_pair_link
 from .pet_package import install_default_pet, install_pet
 
 
@@ -96,7 +97,61 @@ def command_status(args: argparse.Namespace) -> int:
         status["health"] = _get_json(f"http://127.0.0.1:{args.port}/health")
     except urllib.error.URLError as exc:
         status["healthError"] = str(exc)
+    remote = runtime.read_remote_config()
+    status["remote"] = (
+        {
+            "url": remote["url"],
+            "pairedAt": remote.get("pairedAt"),
+            "label": remote.get("label"),
+            "tokenPreview": (
+                remote["token"][:10] + "…" if remote.get("token") else None
+            ),
+            "lastEventId": runtime.read_remote_cursor(),
+        }
+        if remote
+        else None
+    )
     print(json.dumps(status, ensure_ascii=False, indent=2))
+    return 0
+
+
+def command_pair(args: argparse.Namespace) -> int:
+    """Persist remote QwenPaw URL + pairing token.
+
+    Accepts either a single ``qwenpaw-pet://pair?...`` link (preferred —
+    what the cloud UI's "Copy pairing link" button produces) or
+    ``--url`` / ``--token`` for scripted use.
+    """
+    if args.link:
+        try:
+            url, token = decode_pair_link(args.link)
+        except ValueError as exc:
+            print(f"invalid pair link: {exc}", file=sys.stderr)
+            return 2
+    else:
+        if not args.url or not args.token:
+            print(
+                "pair requires either a qwenpaw-pet:// link or "
+                "--url AND --token",
+                file=sys.stderr,
+            )
+            return 2
+        url = args.url.rstrip("/")
+        token = args.token
+    runtime.write_remote_config(url, token, label=args.label)
+    print(f"Paired with {url}")
+    print(f"Config saved to {runtime.remote_config_path()}")
+    print("Restart the desktop app to start receiving events.")
+    return 0
+
+
+def command_unpair(_args: argparse.Namespace) -> int:
+    cfg = runtime.read_remote_config()
+    runtime.clear_remote_config()
+    if cfg:
+        print(f"Removed pairing with {cfg['url']}")
+    else:
+        print("No remote pairing was configured.")
     return 0
 
 
@@ -204,6 +259,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--port", type=int, default=8765)
     p.set_defaults(func=command_switch)
+
+    p = sub.add_parser(
+        "pair",
+        help="Pair with a remote QwenPaw (SSE subscription)",
+    )
+    p.add_argument(
+        "link",
+        nargs="?",
+        default=None,
+        help="qwenpaw-pet://pair?... link from the cloud UI (preferred)",
+    )
+    p.add_argument(
+        "--url",
+        default=None,
+        help="Cloud QwenPaw base URL (mutually exclusive with link)",
+    )
+    p.add_argument(
+        "--token",
+        default=None,
+        help="Pairing token issued by the cloud UI",
+    )
+    p.add_argument(
+        "--label",
+        default=None,
+        help="Optional friendly label saved alongside the pairing",
+    )
+    p.set_defaults(func=command_pair)
+
+    p = sub.add_parser("unpair", help="Forget the saved remote pairing")
+    p.set_defaults(func=command_unpair)
 
     p = sub.add_parser("send", help="Send a test event to the desktop")
     p.add_argument("event")

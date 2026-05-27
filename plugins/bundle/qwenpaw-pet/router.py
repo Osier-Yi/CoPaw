@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import mimetypes
 import re
@@ -11,15 +12,23 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, model_validator
 
+import mode as mode_mod
+import pair_tokens
 from emitter import (
     desktop_status_summary,
     emit_pet_event,
     start_desktop_interactive,
     switch_pet_desktop,
+)
+from event_hub import (
+    HEARTBEAT_INTERVAL,
+    envelope_to_sse,
+    get_hub,
+    keepalive_frame,
 )
 from pet_paths import list_installed_pets, pets_install_dir
 
@@ -44,6 +53,22 @@ class EmitPayload(BaseModel):
     text: str | None = None
     state: str | None = None
     duration_ms: int | None = None
+
+
+class ModeUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str
+
+
+class PairTokenCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str | None = None
+    ttl_days: int | None = None
+
+
+_PAIR_TOKEN_ID = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
 class ImportPetRequest(BaseModel):
@@ -232,15 +257,193 @@ def _resolved_pet_spritesheet_path(folder: str) -> Path:
     return sheet
 
 
-def build_router() -> APIRouter:
+def _extract_pairing_token(request: Request) -> str | None:
+    """Pull the pairing token from header or query, preferring the header.
+
+    Browsers cannot set headers on ``EventSource``, but the desktop
+    client uses ``httpx.stream`` which can — we always read the header
+    first to keep credentials out of access logs. Query-string fallback
+    exists only for hand-curl debugging.
+    """
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip() or None
+    direct = request.headers.get("x-qwenpaw-pet-pair-token")
+    if direct:
+        return direct.strip() or None
+    qp = request.query_params.get("token")
+    if qp:
+        return qp.strip() or None
+    return None
+
+
+def _parse_last_event_id(request: Request) -> int | None:
+    raw = request.headers.get("last-event-id") or request.query_params.get(
+        "last_event_id",
+    )
+    if not raw:
+        return None
+    try:
+        v = int(raw)
+    except ValueError:
+        return None
+    return v if v > 0 else None
+
+
+def build_router() -> APIRouter:  # pylint: disable=too-many-statements
+    # FastAPI route builders are inherently statement-dense (one decorator
+    # + body per endpoint). Splitting by concern is possible but would
+    # spray closure state across helpers without clarifying anything.
     router = APIRouter()
 
     @router.get("/status")
     def status():
+        m, src = mode_mod.resolve_mode()
         return {
             "ok": True,
             "plugin": "qwenpaw-pet",
+            "mode": m,
+            "modeSource": src,
             "desktop": desktop_status_summary(),
+        }
+
+    @router.get("/mode")
+    def mode_get():
+        m, src = mode_mod.resolve_mode()
+        return {"ok": True, "mode": m, "source": src}
+
+    @router.post("/mode")
+    def mode_set(payload: ModeUpdateRequest):
+        try:
+            mode_mod.write_mode(payload.mode)  # type: ignore[arg-type]
+        except PermissionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        m, src = mode_mod.resolve_mode()
+        return {"ok": True, "mode": m, "source": src}
+
+    @router.get("/pair-token")
+    def pair_token_list():
+        return {"ok": True, "tokens": pair_tokens.list_tokens()}
+
+    @router.post("/pair-token")
+    def pair_token_create(payload: PairTokenCreateRequest):
+        info = pair_tokens.issue_token(
+            label=payload.label,
+            ttl_days=payload.ttl_days,
+        )
+        # ``token`` is plaintext and only ever returned here — UI must
+        # treat the response as a one-shot reveal.
+        return {"ok": True, **info}
+
+    @router.delete("/pair-token/self")
+    def pair_token_delete_self(request: Request):
+        """Desktop self-revoke: 'I am leaving, forget my token'.
+
+        Authenticated by the pairing token itself (bearer header) so the
+        desktop does not need to remember the server-side ``id``. The
+        endpoint is idempotent — a missing entry returns 200 so a
+        desktop that retries after a flaky network won't surface a
+        spurious error.
+        """
+        plaintext = _extract_pairing_token(request)
+        if not plaintext:
+            raise HTTPException(
+                status_code=401,
+                detail="missing pairing token",
+            )
+        removed_id = pair_tokens.revoke_by_plaintext(plaintext)
+        return {"ok": True, "revoked": removed_id}
+
+    # Must be registered AFTER the literal ``/self`` route — FastAPI
+    # matches in registration order, and ``self`` would otherwise
+    # collide with the ``{token_id}`` placeholder regex.
+    @router.delete("/pair-token/{token_id}")
+    def pair_token_delete(token_id: str):
+        if not _PAIR_TOKEN_ID.fullmatch(token_id):
+            raise HTTPException(status_code=400, detail="invalid token id")
+        removed = pair_tokens.revoke_token(token_id)
+        if not removed:
+            raise HTTPException(status_code=404, detail="token not found")
+        return {"ok": True, "revoked": token_id}
+
+    @router.get("/events/stream")
+    async def events_stream(request: Request):
+        """SSE long-poll for remote desktops.
+
+        Auth: pairing token only (master token would not survive the
+        ``Authorization`` bounce through QwenPaw's middleware, and a
+        scoped credential is the right shape for a long-running
+        subscription anyway).
+        """
+        plaintext = _extract_pairing_token(request)
+        if not plaintext:
+            raise HTTPException(
+                status_code=401,
+                detail="pairing token required",
+            )
+        label_hint = request.headers.get("x-qwenpaw-pet-client-label")
+        verified = pair_tokens.verify_token(plaintext, label_hint=label_hint)
+        if verified is None:
+            raise HTTPException(
+                status_code=401,
+                detail="invalid or expired pairing token",
+            )
+
+        hub = get_hub()
+        if not hub.is_bound():
+            # FastAPI calls async endpoints from the request loop —
+            # bind here so ``publish`` from any thread can reach us.
+            hub.bind_loop(asyncio.get_running_loop())
+
+        last_id = _parse_last_event_id(request)
+
+        async def _generator():
+            # First frame is a keepalive comment so the client knows
+            # the stream is alive even before the first real event.
+            yield keepalive_frame()
+            agen = hub.subscribe(last_event_id=last_id)
+            try:
+                while True:
+                    try:
+                        envelope = await asyncio.wait_for(
+                            agen.__anext__(),
+                            timeout=HEARTBEAT_INTERVAL,
+                        )
+                    except asyncio.TimeoutError:
+                        if await request.is_disconnected():
+                            return
+                        yield keepalive_frame()
+                        continue
+                    except StopAsyncIteration:
+                        return
+                    yield envelope_to_sse(envelope)
+            finally:
+                # Async-generator ``aclose`` runs the body's ``finally``,
+                # which is what removes the subscriber from the hub —
+                # otherwise a client disconnect would leak a queue.
+                await agen.aclose()
+
+        headers = {
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",  # disable nginx buffering
+            "Connection": "keep-alive",
+        }
+        return StreamingResponse(
+            _generator(),
+            media_type="text/event-stream",
+            headers=headers,
+        )
+
+    @router.get("/desktop/info")
+    def desktop_info():
+        m, src = mode_mod.resolve_mode()
+        return {
+            "ok": True,
+            "mode": m,
+            "modeSource": src,
+            "subscribers": get_hub().subscriber_count(),
         }
 
     @router.get("/pets")

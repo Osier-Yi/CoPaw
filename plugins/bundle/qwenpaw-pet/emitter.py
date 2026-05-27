@@ -697,16 +697,15 @@ def schedule_emit_pet_event(event: str, **payload: Any) -> None:
 def emit_pet_event(event: str, **payload: Any) -> None:
     """Send a lifecycle event to QwenPaw Pet Desktop.
 
-    No-op when the desktop pet is not running. Otherwise fire-and-forget:
-    short timeout, no exception escapes into QwenPaw's main request path.
-    """
-    if not _desktop_is_reachable():
-        logger.debug(
-            "QwenPaw Pet Desktop not running; skip event=%s",
-            event,
-        )
-        return
+    Two delivery paths share this entry point:
 
+    * **Hub** (always): every event is published to the in-process
+      ``EventHub`` so any remote desktop subscribed via SSE
+      (``GET /api/qwenpaw-pet/events/stream``) receives it.
+    * **Loopback** (when reachable): the historical
+      ``POST 127.0.0.1:8765/event`` push, kept so the same-machine
+      mode behaves identically to before.
+    """
     global _EVENT_SERIAL
     _EVENT_SERIAL += 1
     # Do not pre-resolve ``state`` here — the desktop pet maps ``event`` via
@@ -718,6 +717,24 @@ def emit_pet_event(event: str, **payload: Any) -> None:
         "serial": _EVENT_SERIAL,
         **payload,
     }
+
+    # Publish to the hub first so SSE subscribers see the event even
+    # when no local desktop is running. Wrapped because hub failure
+    # must never break the user's main request path.
+    try:
+        from event_hub import publish as hub_publish
+
+        hub_publish(body)
+    except Exception:
+        logger.debug("hub publish failed for event=%s", event, exc_info=True)
+
+    if not _desktop_is_reachable():
+        logger.debug(
+            "QwenPaw Pet Desktop not running; skip loopback POST event=%s",
+            event,
+        )
+        return
+
     base = _active_desktop_base
     if not base:
         return

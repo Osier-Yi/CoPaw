@@ -15,16 +15,20 @@ plugins/qwenpaw-pet/
 ├── pet_paths.py           # plugin-local helpers (WORKING_DIR, list pets)
 ├── patch_runner.py        # monkey patch AgentRunner.query_handler
 ├── patch_approval.py      # monkey patch approval service hooks
+├── event_hub.py           # in-process pub/sub feeding SSE subscribers (v0.2+)
+├── pair_tokens.py         # hashed pairing-token store for remote SSE (v0.2+)
+├── mode.py                # local / remote mode resolution (v0.2+)
 ├── frontend/              # Vite + React console UI source
 ├── dist/index.js          # built console UI bundle (build artifact, committed; regenerated via `npm run build`)
 └── qwenpaw_pet_desktop/   # the Qt + FastAPI desktop runtime (embedded)
-    ├── app.py             # Qt main loop + uvicorn in a background thread
+    ├── app.py             # Qt main loop + uvicorn + optional remote SSE thread
     ├── server.py          # FastAPI app factory (/event, /pet, /bubble, ...)
     ├── window.py          # PetWindow: frameless translucent always-on-top
     ├── sprites.py         # 8x9 atlas constants + event→state mapping
-    ├── runtime.py         # paths, PID, token, atomic JSON helpers
+    ├── runtime.py         # paths, PID, token, remote.json, cursor helpers
     ├── pet_package.py     # validate / install / hot-switch pet packages
-    ├── cli.py             # `python -m qwenpaw_pet_desktop` subcommands
+    ├── remote_client.py   # SSE consumer subscribing to a remote QwenPaw (v0.2+)
+    ├── cli.py             # `python -m qwenpaw_pet_desktop` subcommands (incl. pair / unpair)
     └── assets/default-pet/snowpaw/  # default pet manifest (asset fetched on first use)
 ```
 
@@ -126,6 +130,104 @@ curl -X POST http://127.0.0.1:8765/pet \
 
 Autostart can be disabled with `QWENPAW_PET_AUTOSTART=0`.
 
+## Remote mode (cloud QwenPaw → laptop pet)
+
+When QwenPaw runs on a server the user cannot reach inbound (typical
+home/office NAT in front of a cloud ECS), the loopback push above is a
+dead end. Remote mode flips the direction: the **desktop subscribes to
+the cloud** over a long-lived SSE stream, so every event the server
+emits flows back to the floating pet without any port forwarding.
+
+```text
+QwenPaw + plugin (ECS) ──SSE──▶ qwenpaw_pet_desktop on the laptop
+        ▲                              │
+        └── pairing token in remote.json
+```
+
+The plugin still publishes every event to an internal hub regardless of
+mode — the loopback path is just one consumer; SSE subscribers are
+another. Switching mode does not need a QwenPaw restart.
+
+### Switching mode
+
+Mode precedence: `QWENPAW_PET_MODE` env var > config file > **auto**.
+
+- **`local`** (default for desktop installs) — plugin autostarts the
+  local Qt window and pushes events over loopback. Identical to v0.1
+  behaviour.
+- **`remote`** — plugin skips autostart; the console UI shows the
+  pairing card; the desktop process lives on the user's laptop.
+- **`auto`** — picks `remote` on a headless POSIX host (no `DISPLAY` /
+  `WAYLAND_DISPLAY` / macOS / Windows GUI session), `local` otherwise.
+
+Auto-detection covers the common ECS case out of the box. To flip mode
+manually from the console UI, open the **Pet** sidebar — the toggle at
+the top calls `POST /api/qwenpaw-pet/mode`. Setting
+`QWENPAW_PET_MODE=local|remote|auto` in the environment overrides the
+config file and disables the UI toggle (the badge reads "Mode is fixed
+by the environment variable").
+
+The config file lives at
+`<WORKING_DIR>/qwenpaw-pet-config.json` so it follows QwenPaw's working
+directory backup story.
+
+### Pairing flow (cloud UI → desktop app)
+
+1. Open the **Pet** sidebar on the cloud QwenPaw console (already
+   authenticated with your QwenPaw master token).
+2. Switch mode to **Remote**.
+3. Optionally type a device label (`MyMac`, `WorkPC`, …).
+4. Click **Copy pairing link** — the UI calls
+   `POST /api/qwenpaw-pet/pair-token`, gets back a one-shot plaintext
+   token, base64url-encodes the current `window.location.origin`, and
+   writes
+   `qwenpaw-pet://pair?url=<b64u>&token=<ptoken_...>&v=1` to the
+   clipboard. The plaintext is shown **exactly once** — re-issue if
+   you lose it.
+5. On the user's laptop (with the desktop app installed), paste:
+
+   ```bash
+   qwenpaw-pet pair "qwenpaw-pet://pair?url=...&token=...&v=1"
+   # or, for scripted use:
+   qwenpaw-pet pair --url https://qwenpaw.example.com --token ptoken_... \
+                    --label MyMac
+   ```
+
+   The desktop writes `~/.qwenpaw-pet/runtime/remote.json`
+   (`0600` on POSIX; NTFS user ACL on Windows) and starts a daemon
+   thread that opens `GET <url>/api/qwenpaw-pet/events/stream` with the
+   token in `Authorization: Bearer`.
+6. The sidebar's **Paired devices** card now lists this laptop with
+   its hostname (auto-filled from the
+   `X-QwenPaw-Pet-Client-Label` header the client sends on connect).
+   Click **Revoke** to invalidate the token — the desktop will receive
+   a `401` on its next reconnect attempt and stop the retry loop.
+
+Pairing tokens are **scoped**: they only authorize
+`GET /events/stream`. They are stored hashed (sha256) in
+`<WORKING_DIR>/qwenpaw-pet-pair-tokens.json`; only the plaintext is
+ever returned, only at issuance. Default lifetime is 30 days; tune via
+`QWENPAW_PET_PAIR_TTL_DAYS`. Hard cap of 16 active tokens (oldest
+unused entry is evicted on overflow).
+
+### Desktop runtime: remote-mode CLI
+
+```bash
+qwenpaw-pet pair "qwenpaw-pet://pair?url=...&token=..."
+qwenpaw-pet unpair                # forget the saved pairing
+qwenpaw-pet status                # prints remote URL + last event id
+```
+
+Reconnect strategy: exponential backoff capped at 30 s. The server's
+event hub keeps a ring buffer of the last 256 events, so a brief blip
+re-syncs via `Last-Event-ID` without missing anything. The cursor is
+persisted to `~/.qwenpaw-pet/runtime/remote-cursor.json` so even a
+desktop restart resumes from where it left off. TCP keepalive is
+enabled on Linux (`SO_KEEPALIVE` + `TCP_KEEPIDLE=30s`,
+`TCP_KEEPINTVL=10s`, `TCP_KEEPCNT=3`) to defeat silent NAT/proxy
+idle timeouts; macOS and Windows fall back to their respective OS
+defaults.
+
 ## Frontend (console sidebar)
 
 Manifest field `"frontend": "dist/index.js"`. The committed
@@ -176,15 +278,29 @@ is what macOS Finder's "Compress" produces.
 ## QwenPaw plugin HTTP routes
 
 ```text
-GET  /api/qwenpaw-pet/status
-GET  /api/qwenpaw-pet/pets
-GET  /api/qwenpaw-pet/pets/{folder}/spritesheet
-POST /api/qwenpaw-pet/desktop/start
-POST /api/qwenpaw-pet/switch-pet
-POST /api/qwenpaw-pet/import-pet          # JSON body — server-side path
-POST /api/qwenpaw-pet/import-pet-upload   # multipart/form-data — browser
-POST /api/qwenpaw-pet/emit-test
+GET    /api/qwenpaw-pet/status
+GET    /api/qwenpaw-pet/pets
+GET    /api/qwenpaw-pet/pets/{folder}/spritesheet
+POST   /api/qwenpaw-pet/desktop/start
+POST   /api/qwenpaw-pet/switch-pet
+POST   /api/qwenpaw-pet/import-pet          # JSON body — server-side path
+POST   /api/qwenpaw-pet/import-pet-upload   # multipart/form-data — browser
+POST   /api/qwenpaw-pet/emit-test
+
+# remote mode (v0.2+)
+GET    /api/qwenpaw-pet/mode                # {mode, source}
+POST   /api/qwenpaw-pet/mode                # {mode: "local"|"remote"|"auto"}
+GET    /api/qwenpaw-pet/pair-token          # list active pairings (no plaintext)
+POST   /api/qwenpaw-pet/pair-token          # issue a token (plaintext returned once)
+DELETE /api/qwenpaw-pet/pair-token/{id}     # revoke
+GET    /api/qwenpaw-pet/events/stream       # SSE — pairing token only
+GET    /api/qwenpaw-pet/desktop/info        # {mode, subscribers}
 ```
+
+The SSE endpoint authenticates **only** with a pairing token
+(`Authorization: Bearer ptoken_...` or `?token=...`). Master-token
+routes (`/mode`, `/pair-token`, …) use QwenPaw's existing console
+auth.
 
 **`/import-pet`** (JSON, for CLI / SDK use) takes
 `{"path": "<absolute path>", "replace": true}` and reads a folder or
@@ -293,9 +409,11 @@ will take precedence over the cache and the network fetch.
 | `QWENPAW_PET_REQUIRE_TOKEN` | `0` ⇒ desktop *skips* the token check on mutating endpoints (anything else, including unset, enforces it) | `1` |
 | `QWENPAW_PET_AUTOSTART` | `0` ⇒ plugin will not spawn the desktop | `1` |
 | `QWENPAW_PET_STOP_ON_SHUTDOWN` | `0` ⇒ leave the pet desktop running after QwenPaw exits. Default: terminate any pet desktop QwenPaw has adopted (either by autostarting it or by seeing it healthy at startup / explicit `desktop/start`). | `1` |
-| `QWENPAW_PET_HOME` | Runtime dir (PID file, log, **cache**, token) | `~/.qwenpaw-pet/` |
+| `QWENPAW_PET_HOME` | Runtime dir (PID file, log, **cache**, token, **remote.json**) | `~/.qwenpaw-pet/` |
 | `QWENPAW_PET_SNOWPAW_URL` | CDN URL for snowpaw's `spritesheet.webp` (downloaded once on first install) | Alicdn-hosted default |
-| `QWENPAW_WORKING_DIR` / `COPAW_WORKING_DIR` | Where `pets/` lives | falls back to `~/.copaw` then `~/.qwenpaw` |
+| `QWENPAW_WORKING_DIR` / `COPAW_WORKING_DIR` | Where `pets/`, `qwenpaw-pet-config.json`, `qwenpaw-pet-pair-tokens.json` live | falls back to `~/.copaw` then `~/.qwenpaw` |
+| `QWENPAW_PET_MODE` | Hard-overrides mode. `local` / `remote` / `auto`. When set, UI toggle is disabled. | unset ⇒ `auto` |
+| `QWENPAW_PET_PAIR_TTL_DAYS` | Default validity (days) for newly issued pairing tokens | `30` |
 
 ### Pet desktop log / common errors
 

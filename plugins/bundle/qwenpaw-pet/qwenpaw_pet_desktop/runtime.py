@@ -84,6 +84,86 @@ def instance_lock_path() -> Path:
     return runtime_dir() / "pet-desktop.instance.lock"
 
 
+def remote_config_path() -> Path:
+    """Where the paired remote QwenPaw URL + token live (``remote.json``)."""
+    return runtime_dir() / "remote.json"
+
+
+def remote_cursor_path() -> Path:
+    """Last successfully received SSE event id, for resume-on-reconnect."""
+    return runtime_dir() / "remote-cursor.json"
+
+
+def read_remote_config() -> dict[str, Any] | None:
+    """Return ``{url, token, pairedAt, ...}`` or ``None`` when unpaired."""
+    data = read_json(remote_config_path(), None)
+    if not isinstance(data, dict):
+        return None
+    url = data.get("url")
+    token = data.get("token")
+    if not isinstance(url, str) or not isinstance(token, str):
+        return None
+    url = url.strip().rstrip("/")
+    token = token.strip()
+    if not url or not token:
+        return None
+    return {
+        "url": url,
+        "token": token,
+        "pairedAt": data.get("pairedAt"),
+        "label": data.get("label"),
+    }
+
+
+def write_remote_config(
+    url: str,
+    token: str,
+    *,
+    label: str | None = None,
+) -> None:
+    ensure_runtime()
+    payload: dict[str, Any] = {
+        "url": url.rstrip("/"),
+        "token": token,
+        "pairedAt": int(time.time() * 1000),
+    }
+    if label:
+        payload["label"] = label
+    write_json(remote_config_path(), payload)
+    try:
+        # POSIX: lock down to owner-only. NTFS inherits the user's
+        # profile ACL; chmod is a no-op on Windows.
+        remote_config_path().chmod(0o600)
+    except OSError:
+        pass
+
+
+def clear_remote_config() -> None:
+    try:
+        remote_config_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+    try:
+        remote_cursor_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def read_remote_cursor() -> int | None:
+    data = read_json(remote_cursor_path(), {})
+    v = data.get("lastEventId") if isinstance(data, dict) else None
+    return v if isinstance(v, int) and v > 0 else None
+
+
+def write_remote_cursor(event_id: int) -> None:
+    if not isinstance(event_id, int) or event_id <= 0:
+        return
+    write_json(
+        remote_cursor_path(),
+        {"lastEventId": event_id, "updatedAt": int(time.time() * 1000)},
+    )
+
+
 _SPAWN_CLAIM_TTL_MS = 180_000
 
 
