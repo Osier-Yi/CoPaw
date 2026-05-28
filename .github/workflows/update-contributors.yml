@@ -1,0 +1,161 @@
+name: Update Contributors on Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-contributors:
+    # Skip pre-release versions (beta, rc, post, etc.)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (!contains(github.event.release.tag_name, 'beta') &&
+       !contains(github.event.release.tag_name, 'rc') &&
+       !contains(github.event.release.tag_name, 'post'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find previous stable tag
+        id: tags
+        run: |
+          CURRENT_TAG="${{ github.event.release.tag_name || '' }}"
+
+          # List all tags sorted by version, exclude beta/rc/post
+          STABLE_TAGS=$(git tag --sort=-version:refname | grep -vE '(beta|rc|post|alpha)' | head -20)
+
+          if [ -n "$CURRENT_TAG" ]; then
+            PREV_TAG=$(echo "$STABLE_TAGS" | grep -A1 "^${CURRENT_TAG}$" | tail -1)
+          else
+            # workflow_dispatch: use latest two stable tags
+            CURRENT_TAG=$(echo "$STABLE_TAGS" | head -1)
+            PREV_TAG=$(echo "$STABLE_TAGS" | head -2 | tail -1)
+          fi
+
+          echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
+          echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          echo "Current: $CURRENT_TAG, Previous: $PREV_TAG"
+
+      - name: Get PR authors between tags
+        id: authors
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREV_TAG="${{ steps.tags.outputs.prev_tag }}"
+          CURRENT_TAG="${{ steps.tags.outputs.current_tag }}"
+
+          PREV_DATE=$(git log -1 --format=%aI "$PREV_TAG" 2>/dev/null || echo "2020-01-01T00:00:00Z")
+          CURRENT_DATE=$(git log -1 --format=%aI "$CURRENT_TAG" 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "Fetching merged PRs between $PREV_DATE and $CURRENT_DATE"
+
+          AUTHORS=""
+          PAGE=1
+          while true; do
+            RESULT=$(gh api "repos/${{ github.repository }}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=$PAGE" \
+              --jq "[.[] | select(.merged_at != null and .merged_at >= \"$PREV_DATE\" and .merged_at <= \"$CURRENT_DATE\") | .user.login] | unique | .[]" 2>/dev/null || true)
+
+            if [ -z "$RESULT" ]; then
+              break
+            fi
+            AUTHORS="$AUTHORS"$'\n'"$RESULT"
+            PAGE=$((PAGE + 1))
+
+            # Safety: stop after 10 pages
+            if [ "$PAGE" -gt 10 ]; then
+              break
+            fi
+          done
+
+          AUTHORS=$(echo "$AUTHORS" | sort -u | grep -v '^$')
+          echo "Found PR authors:"
+          echo "$AUTHORS"
+
+          # Write to file for Python to read
+          echo "$AUTHORS" > /tmp/new_authors.txt
+
+      - name: Download existing contributors_data.json
+        run: |
+          curl -fsSL -o /tmp/contributors_data.json \
+            "https://qwenpaw-download.oss-ap-southeast-1.aliyuncs.com/media/contributors_data.json" \
+            || echo "[]" > /tmp/contributors_data.json
+
+      - name: Merge new contributors
+        run: |
+          python3 << 'PYEOF'
+          import json
+
+          BOT_SUFFIXES = ("[bot]", "-bot")
+          BOT_LIST = {"dependabot", "renovate", "github-actions", "aquamarine-bot", "codecov", "allcontributors"}
+
+          def is_bot(login):
+              login_lower = login.lower()
+              if any(login_lower.endswith(s) for s in BOT_SUFFIXES):
+                  return True
+              if login_lower in BOT_LIST:
+                  return True
+              return False
+
+          with open("/tmp/contributors_data.json") as f:
+              contributors = json.load(f)
+
+          existing_logins = {c["login"].lower() for c in contributors}
+
+          with open("/tmp/new_authors.txt") as f:
+              new_authors = [line.strip() for line in f if line.strip()]
+
+          added = []
+          for login in new_authors:
+              if is_bot(login):
+                  print(f"Skipping bot: {login}")
+                  continue
+              if login.lower() in existing_logins:
+                  print(f"Already exists: {login}")
+                  continue
+              contributors.append({
+                  "login": login,
+                  "avatar_url": f"https://github.com/{login}.png",
+                  "html_url": f"https://github.com/{login}",
+              })
+              existing_logins.add(login.lower())
+              added.append(login)
+              print(f"Added: {login}")
+
+          if not added:
+              print("No new contributors to add.")
+          else:
+              print(f"\nAdded {len(added)} new contributor(s): {', '.join(added)}")
+
+          with open("/tmp/contributors_data.json", "w") as f:
+              json.dump(contributors, f, indent=2)
+          PYEOF
+
+      - name: Install ossutil
+        run: |
+          wget https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip ossutil-v1.7.18-linux-amd64.zip
+          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
+          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil --version
+
+      - name: Configure ossutil
+        run: |
+          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
+            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
+            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
+            -L CH
+
+      - name: Upload to OSS
+        run: |
+          ossutil cp /tmp/contributors_data.json \
+            "oss://qwenpaw-download/media/contributors_data.json" \
+            --acl public-read \
+            --force
+          echo "Uploaded contributors_data.json to OSS"
