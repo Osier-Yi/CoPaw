@@ -54,6 +54,7 @@ jobs:
           python3 << 'PYEOF'
           import json
           import subprocess
+          import sys
 
           BOT_SUFFIXES = ("[bot]", "-bot")
           BOT_LIST = {
@@ -81,7 +82,14 @@ jobs:
                   ],
                   capture_output=True, text=True,
               )
-              if result.returncode != 0 or not result.stdout.strip():
+              if result.returncode != 0:
+                  print(
+                      f"::warning::GitHub API failed on page {page}: "
+                      f"{result.stderr.strip() or 'unknown error'}. "
+                      f"Falling back to static contributors_data.json."
+                  )
+                  sys.exit(0)
+              if not result.stdout.strip():
                   break
               for line in result.stdout.strip().split("\n"):
                   parts = line.split("\t")
@@ -96,11 +104,15 @@ jobs:
                       "login": login,
                       "avatar_url": f"https://github.com/{login}.png",
                       "html_url": f"https://github.com/{login}",
-                      "pr_count": int(contribs),
+                      "contributions": int(contribs),
                   })
               page += 1
               if page > 20:
                   break
+
+          if not contributors:
+              print("::warning::No contributors fetched. Using fallback.")
+              sys.exit(0)
 
           contributors.sort(key=lambda x: x["login"].lower())
           with open("website/dist/contributors_data.json", "w") as f:
