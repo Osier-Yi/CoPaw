@@ -44,9 +44,7 @@ export function Contributors() {
     let canceled = false;
     async function loadContributors() {
       try {
-        const response = await fetch(
-          "https://qwenpaw-download.oss-ap-southeast-1.aliyuncs.com/media/contributors_data.json",
-        );
+        const response = await fetch("/contributors_data.json");
         if (!response.ok) return;
         const data = (await response.json()) as Contributor[];
         if (canceled) return;
