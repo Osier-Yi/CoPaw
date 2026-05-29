@@ -323,6 +323,33 @@ _MISSING_DEPS_HINT = (
     '"pyside6-essentials>=6.6" (PySide6 wheels exist for Python 3.10-3.13).'
 )
 
+_HEADLESS_HINT = (
+    "QwenPaw Pet Desktop is a Qt (PySide6) GUI window and needs a graphical "
+    "display server, but this environment looks headless: neither $DISPLAY "
+    "(X11) nor $WAYLAND_DISPLAY (Wayland) is set, so a window cannot be "
+    "shown. Run QwenPaw on a host with a graphical session (or start an "
+    "Xvfb / forward X11 first), or set QWENPAW_PET_AUTOSTART=0 to silence "
+    "this."
+)
+
+
+def _is_headless_environment() -> bool:
+    """True when no graphical display server is available to host a Qt window.
+
+    Only checks Linux / *BSD: macOS and Windows always have a graphical
+    session for a normally logged-in interactive user, so flagging them
+    here would produce false positives. A user who has set up Xvfb / VNC
+    exports ``DISPLAY`` (or ``WAYLAND_DISPLAY``) themselves and is
+    correctly treated as non-headless.
+    """
+    if sys.platform in ("darwin", "win32"):
+        return False
+    if (os.environ.get("DISPLAY") or "").strip():
+        return False
+    if (os.environ.get("WAYLAND_DISPLAY") or "").strip():
+        return False
+    return True
+
 
 def _spawn_desktop_background() -> tuple[bool, str | None]:
     """Start the pet desktop in a detached process.
@@ -343,6 +370,9 @@ def _spawn_desktop_background() -> tuple[bool, str | None]:
 
 
 def _spawn_desktop_background_impl() -> tuple[bool, str | None]:
+    if _is_headless_environment():
+        return False, _HEADLESS_HINT
+
     try:
         from qwenpaw_pet_desktop import runtime as pet_rt
     except ImportError as exc:
