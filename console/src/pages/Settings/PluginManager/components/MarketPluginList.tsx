@@ -1,14 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Alert,
-  Button,
-  Input,
-  Pagination,
-  Spin,
-  Tag,
-  Typography,
-} from "antd";
+import { Alert, Button, Input, Pagination, Spin, Tag, Typography } from "antd";
 import { Download, Package, RefreshCw } from "lucide-react";
 import type { MarketPluginEntry } from "@/api/modules/pluginMarket";
 import { useMarketPlugins } from "../hooks/useMarketPlugins";
@@ -119,14 +111,9 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
               <div className={styles.catalogInfo}>
                 <div className={styles.catalogNameRow}>
                   <Text strong>{entry.display_name}</Text>
-                  {entry.locales?.[
-                    i18n.language.split("-")[0]
-                  ]?.category && (
+                  {entry.locales?.[i18n.language.split("-")[0]]?.category && (
                     <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>
-                      {
-                        entry.locales[i18n.language.split("-")[0]]
-                          .category
-                      }
+                      {entry.locales[i18n.language.split("-")[0]].category}
                     </Tag>
                   )}
                 </div>
@@ -138,10 +125,14 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
                 <div className={styles.catalogMeta}>
                   v{entry.version}
                   {entry.developer
-                    ? ` · ${t("pluginManager.marketDeveloper")}: ${entry.developer}`
+                    ? ` · ${t("pluginManager.marketDeveloper")}: ${
+                        entry.developer
+                      }`
                     : ""}
                   {entry.downloads != null
-                    ? ` · ${t("pluginManager.marketDownloads")}: ${entry.downloads}`
+                    ? ` · ${t("pluginManager.marketDownloads")}: ${
+                        entry.downloads
+                      }`
                     : ""}
                 </div>
               </div>
@@ -151,9 +142,7 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
                   size="small"
                   icon={<Download size={14} />}
                   loading={installingId === entry.id}
-                  disabled={
-                    installingId !== null && installingId !== entry.id
-                  }
+                  disabled={installingId !== null && installingId !== entry.id}
                   onClick={() => void handleInstall(entry)}
                 >
                   {t("pluginManager.catalogInstall")}

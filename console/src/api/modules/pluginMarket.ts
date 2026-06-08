@@ -37,7 +37,10 @@ export interface FetchMarketPluginsParams {
 export async function fetchMarketPlugins(
   params: FetchMarketPluginsParams,
 ): Promise<{ total: number; plugins: MarketPluginEntry[] }> {
-  const url = new URL(getApiUrl("/plugins/market/search"), window.location.origin);
+  const url = new URL(
+    getApiUrl("/plugins/market/search"),
+    window.location.origin,
+  );
   url.searchParams.set("page_number", String(params.page_number));
   url.searchParams.set("page_size", String(params.page_size));
   if (params.search) url.searchParams.set("search", params.search);
