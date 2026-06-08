@@ -2317,7 +2317,13 @@
     "kindBundle": "插件包",
     "kindTool": "工具",
     "filterByName": "按名称筛选",
-    "filterByKind": "按标签筛选"
+    "filterByKind": "按标签筛选",
+    "marketTitle": "插件市场",
+    "marketEmpty": "暂无市场插件",
+    "marketLoadFailed": "加载插件市场失败",
+    "marketSearch": "搜索插件...",
+    "marketDownloads": "下载量",
+    "marketDeveloper": "开发者"
   },
   "codingMode": {
     "title": "编程模式",

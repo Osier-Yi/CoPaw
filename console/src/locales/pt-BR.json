@@ -2162,7 +2162,13 @@
     "kindBundle": "Pacote",
     "kindTool": "Ferramenta",
     "filterByName": "Filtrar por nome",
-    "filterByKind": "Filtrar por tipo"
+    "filterByKind": "Filtrar por tipo",
+    "marketTitle": "Plugin Market",
+    "marketEmpty": "No plugins found in market",
+    "marketLoadFailed": "Failed to load plugin market",
+    "marketSearch": "Search plugins...",
+    "marketDownloads": "Downloads",
+    "marketDeveloper": "Developer"
   },
   "plan": {
     "title": "Plan",

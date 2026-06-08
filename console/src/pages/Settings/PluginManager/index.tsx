@@ -7,6 +7,7 @@ import { usePluginColumns } from "./hooks/usePluginColumns";
 import { useInstallModal } from "./hooks/useInstallModal";
 import { InstallPluginModal } from "./components/InstallPluginModal";
 import { OfficialPluginList } from "./components/OfficialPluginList";
+import { MarketPluginList } from "./components/MarketPluginList";
 import styles from "./index.module.less";
 
 export default function PluginManagerPage() {
@@ -50,6 +51,11 @@ export default function PluginManagerPage() {
       key: "official",
       label: t("pluginManager.officialTitle"),
       children: <OfficialPluginList onInstalled={refresh} />,
+    },
+    {
+      key: "market",
+      label: t("pluginManager.marketTitle"),
+      children: <MarketPluginList onInstalled={refresh} />,
     },
   ];
 

@@ -2308,7 +2308,13 @@
     "kindBundle": "Bundle",
     "kindTool": "Tool",
     "filterByName": "Filter by name",
-    "filterByKind": "Filter by kind"
+    "filterByKind": "Filter by kind",
+    "marketTitle": "Plugin Market",
+    "marketEmpty": "No plugins found in market",
+    "marketLoadFailed": "Failed to load plugin market",
+    "marketSearch": "Search plugins...",
+    "marketDownloads": "Downloads",
+    "marketDeveloper": "Developer"
   },
   "codingMode": {
     "title": "Coding Mode",

@@ -694,7 +694,13 @@
     "kindBundle": "Bundel",
     "kindTool": "Alat",
     "filterByName": "Filter berdasarkan nama",
-    "filterByKind": "Filter berdasarkan jenis"
+    "filterByKind": "Filter berdasarkan jenis",
+    "marketTitle": "Plugin Market",
+    "marketEmpty": "No plugins found in market",
+    "marketLoadFailed": "Failed to load plugin market",
+    "marketSearch": "Search plugins...",
+    "marketDownloads": "Downloads",
+    "marketDeveloper": "Developer"
   },
   "debug": {
     "title": "Debug",
