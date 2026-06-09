@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Button, Empty, Spin, Table, Tabs } from "antd";
-import { Package, Plus } from "lucide-react";
+import { ExternalLink, Package, Plus } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { usePluginManager } from "./hooks/usePluginManager";
 import { usePluginColumns } from "./hooks/usePluginColumns";
@@ -65,13 +65,26 @@ export default function PluginManagerPage() {
         parent={t("nav.settings")}
         current={t("nav.pluginManager")}
         extra={
-          <Button
-            type="primary"
-            icon={<Plus size={16} />}
-            onClick={installModal.openModal}
-          >
-            {t("pluginManager.installBtn")}
-          </Button>
+          <>
+            <Button
+              icon={<ExternalLink size={16} />}
+              onClick={() =>
+                window.open(
+                  "https://platform-pre.agentscope.io/plugins",
+                  "_blank",
+                )
+              }
+            >
+              {t("pluginManager.publishBtn")}
+            </Button>
+            <Button
+              type="primary"
+              icon={<Plus size={16} />}
+              onClick={installModal.openModal}
+            >
+              {t("pluginManager.installBtn")}
+            </Button>
+          </>
         }
       />
 

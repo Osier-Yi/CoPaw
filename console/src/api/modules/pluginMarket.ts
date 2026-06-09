@@ -15,6 +15,7 @@ export interface MarketPluginEntry {
   logo_url: string | null;
   downloads: number;
   view_count: number;
+  details_url: string | null;
   locales: Record<string, MarketPluginLocale>;
 }
 

@@ -1,12 +1,22 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert, Button, Input, Pagination, Spin, Tag, Typography } from "antd";
-import { Download, Package, RefreshCw } from "lucide-react";
+import { Download, ExternalLink, Package, RefreshCw } from "lucide-react";
 import type { MarketPluginEntry } from "@/api/modules/pluginMarket";
 import { useMarketPlugins } from "../hooks/useMarketPlugins";
 import styles from "./OfficialPluginList.module.less";
+import marketStyles from "./MarketPluginList.module.less";
 
 const { Text } = Typography;
+
+const PLUGIN_CATEGORIES = [
+  { code: "agent-tool", zh: "Agent 工具", en: "Agent Tool" },
+  { code: "provider", zh: "模型接入", en: "Provider" },
+  { code: "command", zh: "Slash 命令", en: "Slash Command" },
+  { code: "hook", zh: "生命周期 Hook", en: "Lifecycle Hook" },
+  { code: "frontend", zh: "UI 扩展", en: "UI Extension" },
+  { code: "general", zh: "通用插件", en: "General" },
+];
 
 function pickLocalizedDescription(
   entry: MarketPluginEntry,
@@ -37,6 +47,7 @@ interface MarketPluginListProps {
 export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
   const { t, i18n } = useTranslation();
   const [searchInput, setSearchInput] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
 
   const {
     loading,
@@ -45,35 +56,86 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
     total,
     page,
     pageSize,
+    category,
     installingId,
     loadPlugins,
     handleSearch,
+    handleCategoryChange,
     handlePageChange,
     handleInstall,
   } = useMarketPlugins({ onInstalled });
 
+  const lang = i18n.language.split("-")[0].toLowerCase();
+
+  const isSearchMode = !!activeSearch;
+
+  const onSearch = (val: string) => {
+    setActiveSearch(val);
+    handleSearch(val);
+    if (val) handleCategoryChange(undefined);
+  };
+
+  const onCategoryClick = (code: string | null) => {
+    handleCategoryChange(code || undefined);
+  };
+
   return (
     <div className={styles.catalogSection}>
-      <div className={styles.catalogToolbar}>
-        <div className={styles.catalogFilters}>
+      <div className={marketStyles.toolbar}>
+        {!isSearchMode ? (
+          <div className={marketStyles.categoryTabs}>
+            <span
+              className={`${marketStyles.categoryTab} ${
+                !category ? marketStyles.categoryTabActive : ""
+              }`}
+              onClick={() => onCategoryClick(null)}
+            >
+              {t("pluginManager.marketAll")}
+            </span>
+            {PLUGIN_CATEGORIES.map((cat) => (
+              <span
+                key={cat.code}
+                className={`${marketStyles.categoryTab} ${
+                  category === cat.code ? marketStyles.categoryTabActive : ""
+                }`}
+                onClick={() => onCategoryClick(cat.code)}
+              >
+                {lang === "zh" ? cat.zh : cat.en}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className={marketStyles.searchHint}>
+            {!loading &&
+              !error &&
+              t("pluginManager.marketSearchResult", {
+                keyword: activeSearch,
+                count: total,
+              })}
+          </div>
+        )}
+        <div className={marketStyles.toolbarRight}>
           <Input.Search
             placeholder={t("pluginManager.marketSearch")}
             allowClear
             value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onSearch={(val) => handleSearch(val)}
-            style={{ width: 280 }}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              if (!e.target.value) onSearch("");
+            }}
+            onSearch={onSearch}
+            style={{ width: 220 }}
           />
+          <Button
+            type="default"
+            size="small"
+            icon={<RefreshCw size={14} />}
+            onClick={() => void loadPlugins(page, searchInput, category)}
+            disabled={loading}
+          >
+            {t("pluginManager.catalogRefresh")}
+          </Button>
         </div>
-        <Button
-          type="default"
-          size="small"
-          icon={<RefreshCw size={14} />}
-          onClick={() => void loadPlugins(page, searchInput)}
-          disabled={loading}
-        >
-          {t("pluginManager.catalogRefresh")}
-        </Button>
       </div>
 
       {error && (
@@ -111,9 +173,9 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
               <div className={styles.catalogInfo}>
                 <div className={styles.catalogNameRow}>
                   <Text strong>{entry.display_name}</Text>
-                  {entry.locales?.[i18n.language.split("-")[0]]?.category && (
+                  {entry.locales?.[lang]?.category && (
                     <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>
-                      {entry.locales[i18n.language.split("-")[0]].category}
+                      {entry.locales[lang].category}
                     </Tag>
                   )}
                 </div>
@@ -137,6 +199,16 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
                 </div>
               </div>
               <div className={styles.catalogActions}>
+                {entry.details_url && (
+                  <Button
+                    type="default"
+                    size="small"
+                    icon={<ExternalLink size={14} />}
+                    onClick={() => window.open(entry.details_url!, "_blank")}
+                  >
+                    {t("pluginManager.marketDetails")}
+                  </Button>
+                )}
                 <Button
                   type="primary"
                   size="small"

@@ -2146,7 +2146,11 @@
     "marketTitle": "Plugin Market",
     "marketEmpty": "No plugins found in market",
     "marketLoadFailed": "Failed to load plugin market",
+    "marketAll": "All",
     "marketSearch": "Search plugins...",
+    "marketCategory": "Filter by category",
+    "marketSearchResult": "Found {{count}} plugins matching \"{{keyword}}\"",
+    "marketDetails": "Details",
     "marketDownloads": "Downloads",
     "marketDeveloper": "Developer"
   },

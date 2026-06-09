@@ -22,10 +22,11 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<string | undefined>(undefined);
   const [installingId, setInstallingId] = useState<string | null>(null);
 
   const loadPlugins = useCallback(
-    async (pageNum: number, keyword: string) => {
+    async (pageNum: number, keyword: string, cat?: string) => {
       setLoading(true);
       setError(null);
       try {
@@ -33,6 +34,7 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
           page_number: pageNum,
           page_size: pageSize,
           search: keyword || undefined,
+          category: cat || undefined,
         });
         setPlugins(data.plugins ?? []);
         setTotal(data.total);
@@ -52,11 +54,16 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
   );
 
   useEffect(() => {
-    void loadPlugins(page, search);
-  }, [page, search, loadPlugins]);
+    void loadPlugins(page, search, category);
+  }, [page, search, category, loadPlugins]);
 
   const handleSearch = useCallback((keyword: string) => {
     setSearch(keyword);
+    setPage(1);
+  }, []);
+
+  const handleCategoryChange = useCallback((cat: string | undefined) => {
+    setCategory(cat);
     setPage(1);
   }, []);
 
@@ -91,9 +98,11 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
     total,
     page,
     pageSize,
+    category,
     installingId,
     loadPlugins,
     handleSearch,
+    handleCategoryChange,
     handlePageChange,
     handleInstall,
   };

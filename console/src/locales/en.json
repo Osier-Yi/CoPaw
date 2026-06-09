@@ -2269,6 +2269,7 @@
     "installed": "Installed Plugins",
     "noPlugins": "No plugins installed yet",
     "installBtn": "Install Plugin",
+    "publishBtn": "Publish Plugin",
     "installTitle": "Install Plugin",
     "dropPrimary": "Drop folder or ZIP here",
     "dropSecondary": "or click to browse a ZIP file",
@@ -2313,6 +2314,10 @@
     "marketEmpty": "No plugins found in market",
     "marketLoadFailed": "Failed to load plugin market",
     "marketSearch": "Search plugins...",
+    "marketAll": "All",
+    "marketCategory": "Filter by category",
+    "marketSearchResult": "Found {{count}} plugins matching \"{{keyword}}\"",
+    "marketDetails": "Details",
     "marketDownloads": "Downloads",
     "marketDeveloper": "Developer"
   },
