@@ -2146,6 +2146,7 @@
     "marketTitle": "Plugin Market",
     "marketEmpty": "No plugins found in market",
     "marketLoadFailed": "Failed to load plugin market",
+    "marketUnavailable": "Plugin Market is currently under maintenance, please try again later",
     "marketAll": "All",
     "marketSearch": "Search plugins...",
     "marketCategory": "Filter by category",

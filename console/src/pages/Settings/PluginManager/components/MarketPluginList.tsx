@@ -142,7 +142,7 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
         <Alert
           type="warning"
           showIcon
-          message={error}
+          message={<span style={{ fontSize: 15 }}>{error}</span>}
           style={{ marginBottom: 12 }}
         />
       )}

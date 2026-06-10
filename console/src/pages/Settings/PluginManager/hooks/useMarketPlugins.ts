@@ -38,12 +38,8 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
         });
         setPlugins(data.plugins ?? []);
         setTotal(data.total);
-      } catch (err) {
-        const msg =
-          err instanceof Error
-            ? err.message
-            : t("pluginManager.marketLoadFailed");
-        setError(msg);
+      } catch {
+        setError(t("pluginManager.marketUnavailable"));
         setPlugins([]);
         setTotal(0);
       } finally {

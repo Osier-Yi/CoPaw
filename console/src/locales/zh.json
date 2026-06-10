@@ -2322,6 +2322,7 @@
     "marketTitle": "插件市场",
     "marketEmpty": "暂无市场插件",
     "marketLoadFailed": "加载插件市场失败",
+    "marketUnavailable": "插件市场正在维护中，请稍后再试",
     "marketSearch": "搜索插件...",
     "marketAll": "全部",
     "marketCategory": "按类别筛选",

@@ -2313,6 +2313,7 @@
     "marketTitle": "Plugin Market",
     "marketEmpty": "No plugins found in market",
     "marketLoadFailed": "Failed to load plugin market",
+    "marketUnavailable": "Plugin Market is currently under maintenance, please try again later",
     "marketSearch": "Search plugins...",
     "marketAll": "All",
     "marketCategory": "Filter by category",
