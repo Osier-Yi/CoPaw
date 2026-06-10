@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppMessage } from "@/hooks/useAppMessage";
 import {
@@ -15,6 +15,9 @@ interface UseMarketPluginsOptions {
 export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
   const { t } = useTranslation();
   const { message } = useAppMessage();
+  const tRef = useRef(t);
+  tRef.current = t;
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [plugins, setPlugins] = useState<MarketPluginEntry[]>([]);
@@ -39,14 +42,14 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
         setPlugins(data.plugins ?? []);
         setTotal(data.total);
       } catch {
-        setError(t("pluginManager.marketUnavailable"));
+        setError(tRef.current("pluginManager.marketUnavailable"));
         setPlugins([]);
         setTotal(0);
       } finally {
         setLoading(false);
       }
     },
-    [pageSize, t],
+    [pageSize],
   );
 
   useEffect(() => {
@@ -67,24 +70,32 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
     setPage(newPage);
   }, []);
 
+  const handleRefresh = useCallback(() => {
+    void loadPlugins(page, search, category);
+  }, [loadPlugins, page, search, category]);
+
   const handleInstall = useCallback(
     async (entry: MarketPluginEntry) => {
       setInstallingId(entry.id);
       try {
         const downloadUrl = buildMarketDownloadUrl(entry);
         const result = await installPlugin(downloadUrl, { force: true });
-        message.success(`${t("pluginManager.installSuccess")}: ${result.name}`);
+        message.success(
+          `${tRef.current("pluginManager.installSuccess")}: ${result.name}`,
+        );
         onInstalled();
         setTimeout(() => window.location.reload(), 800);
       } catch (err) {
         const msg =
-          err instanceof Error ? err.message : t("pluginManager.installFailed");
+          err instanceof Error
+            ? err.message
+            : tRef.current("pluginManager.installFailed");
         message.error(msg);
       } finally {
         setInstallingId(null);
       }
     },
-    [message, onInstalled, t],
+    [message, onInstalled],
   );
 
   return {
@@ -96,10 +107,10 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
     pageSize,
     category,
     installingId,
-    loadPlugins,
     handleSearch,
     handleCategoryChange,
     handlePageChange,
+    handleRefresh,
     handleInstall,
   };
 }

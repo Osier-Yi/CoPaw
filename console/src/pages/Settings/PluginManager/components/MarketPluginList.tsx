@@ -58,10 +58,10 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
     pageSize,
     category,
     installingId,
-    loadPlugins,
     handleSearch,
     handleCategoryChange,
     handlePageChange,
+    handleRefresh,
     handleInstall,
   } = useMarketPlugins({ onInstalled });
 
@@ -130,7 +130,7 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
             type="default"
             size="small"
             icon={<RefreshCw size={14} />}
-            onClick={() => void loadPlugins(page, searchInput, category)}
+            onClick={handleRefresh}
             disabled={loading}
           >
             {t("pluginManager.catalogRefresh")}
