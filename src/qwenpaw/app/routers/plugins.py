@@ -885,7 +885,7 @@ async def serve_plugin_ui_file(
 
 # ── Plugin market proxy ───────────────────────────────────────────────────
 
-_PLUGIN_MARKET_BASE_URL = "https://platform-pre.agentscope.io"
+_PLUGIN_MARKET_BASE_URL = "https://platform.agentscope.io"
 _PLUGIN_MARKET_TIMEOUT = 15
 
 

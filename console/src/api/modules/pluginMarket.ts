@@ -70,5 +70,5 @@ export async function fetchMarketPlugins(
 export function buildMarketDownloadUrl(entry: MarketPluginEntry): string {
   const id = entry.id.startsWith("@") ? entry.id.slice(1) : entry.id;
   const [owner, name] = id.split("/");
-  return `https://platform-pre.agentscope.io/plugins/${owner}/${name}/archive/zip/master`;
+  return `https://platform.agentscope.io/plugins/${owner}/${name}/archive/zip/master`;
 }
