@@ -183,9 +183,11 @@
     "cloud": {
       "aliyun": "阿里云",
       "modelscope": "魔搭",
+      "platform": "AgentScope Platform",
       "aliyunDeploy": "前往阿里云一键部署",
       "aliyunDoc": "查看说明文档",
-      "modelscopeGo": "前往魔搭创空间"
+      "modelscopeGo": "前往魔搭创空间",
+      "platformGo": "前往 AgentScope Platform 一键部署体验"
     },
     "desktop": {
       "platforms": "支持平台",

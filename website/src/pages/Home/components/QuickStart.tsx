@@ -26,7 +26,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 type InstallMethod = "pip" | "script" | "docker" | "cloud" | "desktop";
 type ScriptPlatform = "mac" | "windows";
 type ScriptWindowsVariant = "cmd" | "ps";
-type CloudPlatform = "aliyun" | "modelscope";
+type CloudPlatform = "aliyun" | "modelscope" | "platform";
 
 type QuickStartProps = {
   docsBase: string;
@@ -38,6 +38,7 @@ const MODELSCOPE_URL =
 const ALIYUN_ECS_URL =
   "https://computenest.console.aliyun.com/service/instance/create/cn-hangzhou?type=user&ServiceId=service-1ed84201799f40879884";
 const ALIYUN_DOC_URL = "https://developer.aliyun.com/article/1713682";
+const PLATFORM_URL = "https://platform-pre.agentscope.io/";
 const DESKTOP_RELEASES_URL =
   "https://github.com/agentscope-ai/QwenPaw/releases";
 
@@ -491,22 +492,22 @@ export function QuickStart({ docsBase }: QuickStartProps) {
                           >
                             <div className="flex justify-center">
                               <div className="inline-flex h-11 items-center rounded-xl border border-[#ebe5df] bg-(--color-fill-tertiary) p-1 sm:h-11">
-                                {(["aliyun", "modelscope"] as const).map(
-                                  (platform) => (
-                                    <button
-                                      key={platform}
-                                      type="button"
-                                      onClick={() => setCloudPlatform(platform)}
-                                      className={`inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg px-4 text-sm font-semibold leading-none sm:h-10 sm:px-6 sm:text-[1.05rem] ${
-                                        cloudPlatform === platform
-                                          ? "bg-white text-(--color-text) shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
-                                          : "text-(--color-text-secondary)"
-                                      }`}
-                                    >
-                                      {t(`quickstart.cloud.${platform}`)}
-                                    </button>
-                                  ),
-                                )}
+                                {(
+                                  ["aliyun", "modelscope", "platform"] as const
+                                ).map((platform) => (
+                                  <button
+                                    key={platform}
+                                    type="button"
+                                    onClick={() => setCloudPlatform(platform)}
+                                    className={`inline-flex h-9 items-center justify-center whitespace-nowrap rounded-lg px-4 text-sm font-semibold leading-none sm:h-10 sm:px-6 sm:text-[1.05rem] ${
+                                      cloudPlatform === platform
+                                        ? "bg-white text-(--color-text) shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+                                        : "text-(--color-text-secondary)"
+                                    }`}
+                                  >
+                                    {t(`quickstart.cloud.${platform}`)}
+                                  </button>
+                                ))}
                               </div>
                             </div>
 
@@ -514,7 +515,9 @@ export function QuickStart({ docsBase }: QuickStartProps) {
                               href={
                                 cloudPlatform === "aliyun"
                                   ? ALIYUN_ECS_URL
-                                  : MODELSCOPE_URL
+                                  : cloudPlatform === "modelscope"
+                                  ? MODELSCOPE_URL
+                                  : PLATFORM_URL
                               }
                               target="_blank"
                               rel="noopener noreferrer"
@@ -525,10 +528,15 @@ export function QuickStart({ docsBase }: QuickStartProps) {
                                   <AliyunIcon size={20} />
                                   {t("quickstart.cloud.aliyunDeploy")}
                                 </>
-                              ) : (
+                              ) : cloudPlatform === "modelscope" ? (
                                 <>
                                   <ModelIcon size={20} />
                                   {t("quickstart.cloud.modelscopeGo")}
+                                </>
+                              ) : (
+                                <>
+                                  <Cloud size={20} aria-hidden />
+                                  {t("quickstart.cloud.platformGo")}
                                 </>
                               )}
                             </a>

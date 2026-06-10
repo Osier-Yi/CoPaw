@@ -183,9 +183,11 @@
     "cloud": {
       "aliyun": "Aliyun",
       "modelscope": "ModelScope",
+      "platform": "AgentScope Platform",
       "aliyunDeploy": "Deploy on Aliyun ECS",
       "aliyunDoc": "View Documentation",
-      "modelscopeGo": "Go to ModelScope Studio"
+      "modelscopeGo": "Go to ModelScope Studio",
+      "platformGo": "Deploy on AgentScope Platform"
     },
     "desktop": {
       "platforms": "Supported Platforms",
