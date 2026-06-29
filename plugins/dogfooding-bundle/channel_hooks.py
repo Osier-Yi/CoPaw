@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=relative-beyond-top-level,protected-access
 """Channel hooks for dogfooding feedback (DingTalk action cards)."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .feedback_service import (
     BAD_FEEDBACK_REASONS,
@@ -82,7 +83,7 @@ def patch_dingtalk_channel() -> None:
         from qwenpaw.app.channels.dingtalk.channel import DingTalkChannel
     except ImportError:
         logger.warning(
-            "DingTalk channel unavailable; feedback card hook skipped"
+            "DingTalk channel unavailable; feedback card hook skipped",
         )
         return
 
@@ -133,11 +134,13 @@ def patch_dingtalk_channel() -> None:
         payload = build_dingtalk_feedback_action_card(trace_id)
         try:
             await self._send_payload_via_session_webhook(
-                session_webhook, payload
+                session_webhook,
+                payload,
             )
         except Exception:
             logger.debug(
-                "Failed to send DingTalk feedback card", exc_info=True
+                "Failed to send DingTalk feedback card",
+                exc_info=True,
             )
 
     DingTalkChannel._on_process_completed = patched_completed

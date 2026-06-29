@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=relative-beyond-top-level
 """Dogfooding feedback business logic."""
 
 from __future__ import annotations
@@ -173,7 +174,11 @@ def parse_dingtalk_feedback_message(text: str) -> Optional[str]:
     """Parse explicit feedback prefix from button callback text."""
     raw = (text or "").strip()
     m = re.match(
-        r"^__dogfooding_feedback:(?P<label>bad|fine|good)(?::(?P<tid>[a-f0-9]+))?$",
+        (
+            r"^__dogfooding_feedback:"
+            r"(?P<label>bad|fine|good)"
+            r"(?::(?P<tid>[a-f0-9]+))?$"
+        ),
         raw,
         re.I,
     )
@@ -199,7 +204,7 @@ def parse_dingtalk_reason_message(text: str) -> Optional[str]:
     return None
 
 
-def handle_dingtalk_inbound_text(
+def handle_dingtalk_inbound_text(  # pylint: disable=too-many-return-statements
     *,
     conversation_id: str,
     text: str,
@@ -262,7 +267,7 @@ def handle_dingtalk_inbound_text(
 
 
 def build_dingtalk_feedback_action_card(trace_id: str) -> dict:
-    """Build DingTalk session-webhook actionCard payload for score selection."""
+    """Build DingTalk actionCard payload for score selection."""
     btns = []
     for label, zh in SCORE_LABEL_ZH.items():
         btns.append(

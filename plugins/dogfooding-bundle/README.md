@@ -72,7 +72,7 @@ wrapt<2.0.0
 ### AgentScope Dogfooding Provider
 
 After installation, select **AgentScope Dogfooding** as the provider in
-QwenPaw settings and enter your API key.
+After installing, complete Alibaba SSO on the dogfooding plugin page. The **API key is saved automatically** to the AgentScope Dogfooding provider config — no manual copy/paste in Settings → Models.
 
 - Default model: `qwen3.7-max-dogfooding` (display name Qwen3.7-Max-DogFooding, multimodal)
 - Proxy URL: `http://proxy.agentscope.design/v1` (legacy IP:8081 configs are migrated on install)
@@ -98,7 +98,7 @@ redirect URIs. The plugin uses **new-tab login + paste code**:
 1. Click **Alibaba SSO Login** on the dogfooding plugin page
 2. Complete SSO in the new tab
 3. Paste the `code` (or full callback URL) back into the plugin page and submit
-4. Emp id is saved to `dogfooding/user_account.json`; API key is written to provider config
+4. Emp id is saved to `dogfooding/user_account.json`; **API key is auto-written** to the AgentScope Dogfooding provider config (verify under Settings → Models)
 
 ### DingTalk Feedback
 

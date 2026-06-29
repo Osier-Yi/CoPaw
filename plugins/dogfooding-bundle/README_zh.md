@@ -69,7 +69,7 @@ wrapt<2.0.0
 
 ### AgentScope Dogfooding Provider
 
-安装后，在 QwenPaw 设置界面选择 **AgentScope Dogfooding** 作为 Provider，填入 API Key 即可。
+安装后，在 QwenPaw 插件页完成集团 SSO 登录即可；**API Key 会自动写入 AgentScope Dogfooding 模型配置**，无需再到「设置 → 模型」手动粘贴。
 
 - 默认模型：`qwen3.7-max-dogfooding`（显示名 Qwen3.7-Max-DogFooding，支持多模态）
 - 代理地址：`http://proxy.agentscope.design/v1`（安装时会自动迁移旧版 IP:8081 配置）
@@ -93,7 +93,7 @@ wrapt<2.0.0
 1. 在 dogfooding 插件页点击「阿里集团账号登录」
 2. 在新标签页完成 SSO
 3. 将地址栏中的 `code`（或整段回调 URL）粘贴回插件页，点击「完成登录」
-4. 工号写入 `dogfooding/user_account.json`，API Key 写入 Provider 配置
+4. 工号写入 `dogfooding/user_account.json`，**API Key 自动写入 AgentScope Dogfooding Provider 配置**（可在「设置 → 模型」确认）
 
 ### DingTalk 反馈
 

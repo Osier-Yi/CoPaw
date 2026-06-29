@@ -25,7 +25,7 @@ from qwenpaw.plugins.api import PluginApi
 from qwenpaw.providers.openai_provider import OpenAIProvider
 from qwenpaw.providers.provider import ModelInfo
 
-# pylint: disable=relative-beyond-top-level
+# pylint: disable=relative-beyond-top-level,protected-access
 from .feedback_service import (
     DOGFOODING_META_KEY,
     build_dogfooding_meta,
@@ -58,7 +58,8 @@ _trace_channel: ContextVar[str] = ContextVar(
     default="web",
 )
 
-# Latest dogfooding trace context is tracked in tracking.py for feedback nesting.
+# Latest dogfooding trace context is tracked in tracking.py
+# for feedback nesting.
 
 # EvaPlus span attribute names
 _EMP_ID_ATTR = "alibaba.base.emp_id"
@@ -107,6 +108,13 @@ class DogfoodingAccountPayload(BaseModel):
     """Request body for saving the dogfooding user account."""
 
     user_account: str = Field(..., min_length=1)
+    proxy_api_key: str = ""
+
+
+class DogfoodingProviderConfigPayload(BaseModel):
+    """Request body for saving the dogfooding provider API key."""
+
+    proxy_api_key: str = Field(..., min_length=1)
 
 
 class DogfoodingAccountResponse(BaseModel):
@@ -114,6 +122,14 @@ class DogfoodingAccountResponse(BaseModel):
 
     ok: bool
     path: str
+    provider_configured: bool = False
+
+
+class DogfoodingProviderConfigResponse(BaseModel):
+    """Response body after saving the provider API key."""
+
+    ok: bool
+    provider_id: str
 
 
 def _dogfooding_dir() -> Path:
@@ -152,6 +168,27 @@ def _read_user_id_cached() -> str:
     return value
 
 
+def _save_provider_api_key(api_key: str) -> None:
+    """Persist proxy API key into the AgentScope Dogfooding provider config."""
+    from qwenpaw.providers.provider_manager import ProviderManager
+
+    trimmed = api_key.strip()
+    if not trimmed:
+        raise HTTPException(status_code=400, detail="proxy_api_key is empty")
+
+    manager = ProviderManager.get_instance()
+    ok = manager.update_provider(
+        _PROVIDER_ID,
+        {"api_key": trimmed, "base_url": _BASE_URL},
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Provider '{_PROVIDER_ID}' not found",
+        )
+    logger.info("Dogfooding provider API key saved via SSO login")
+
+
 def _build_dogfooding_account_router() -> APIRouter:
     """Build routes mounted under /api/dogfooding-account."""
     router = APIRouter()
@@ -180,7 +217,31 @@ def _build_dogfooding_account_router() -> APIRouter:
                 detail="Failed to save user account",
             ) from exc
 
-        return DogfoodingAccountResponse(ok=True, path=str(target))
+        provider_configured = False
+        proxy_api_key = payload.proxy_api_key.strip()
+        if proxy_api_key:
+            _save_provider_api_key(proxy_api_key)
+            provider_configured = True
+
+        return DogfoodingAccountResponse(
+            ok=True,
+            path=str(target),
+            provider_configured=provider_configured,
+        )
+
+    @router.post(
+        "/configure-provider",
+        response_model=DogfoodingProviderConfigResponse,
+    )
+    def configure_provider_api_key(
+        payload: DogfoodingProviderConfigPayload,
+    ) -> DogfoodingProviderConfigResponse:
+        """Save SSO proxy API key into the dogfooding provider config."""
+        _save_provider_api_key(payload.proxy_api_key)
+        return DogfoodingProviderConfigResponse(
+            ok=True,
+            provider_id=_PROVIDER_ID,
+        )
 
     return router
 
@@ -378,7 +439,8 @@ class DogfoodingBundlePlugin:
         )
         logger.info(
             "Dogfooding account API registered at "
-            "POST /api/dogfooding-account/",
+            "POST /api/dogfooding-account/ and "
+            "POST /api/dogfooding-account/configure-provider",
         )
 
     def _patch_query_handler(self):
@@ -689,7 +751,7 @@ class _BundleSpanProcessor:
 
 
 def _migrate_saved_provider_config() -> None:
-    """Upgrade persisted provider config when endpoint/model defaults change."""
+    """Upgrade persisted provider config when defaults change."""
     try:
         from qwenpaw.constant import SECRET_DIR
 

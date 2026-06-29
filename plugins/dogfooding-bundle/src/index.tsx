@@ -67,9 +67,9 @@ interface SsoTokenResponse {
 }
 type PersistNotice =
   | null
-  | { kind: "success"; path: string }
+  | { kind: "success"; path?: string; providerConfigured?: boolean }
   | { kind: "skipped"; reason: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; scope?: "account" | "provider" };
 
 interface LookupUserResponse {
   name?: string | null;
@@ -240,6 +240,12 @@ function stripSsoCallbackParamsFromUrl(): void {
 interface DogfoodingAccountSaveResponse {
   ok: boolean;
   path: string;
+  provider_configured?: boolean;
+}
+
+interface DogfoodingProviderConfigResponse {
+  ok: boolean;
+  provider_id: string;
 }
 
 /** 与 DogfoodingAccountPayload 一致：字段名 user_account，非空由调用方保证 */
@@ -260,12 +266,18 @@ function buildQwenPawApiHeaders(): Record<string, string> {
 
 async function saveDogfoodingUserAccount(
   userAccount: string,
+  proxyApiKey?: string,
 ): Promise<DogfoodingAccountSaveResponse> {
   const url = new URL("/api/dogfooding-account/", window.location.origin).href;
+  const body: Record<string, string> = { user_account: userAccount };
+  const trimmedKey = proxyApiKey?.trim();
+  if (trimmedKey) {
+    body.proxy_api_key = trimmedKey;
+  }
   const response = await fetch(url, {
     method: "POST",
     headers: buildQwenPawApiHeaders(),
-    body: JSON.stringify({ user_account: userAccount }),
+    body: JSON.stringify(body),
   });
   const text = await response.text();
   let parsed: unknown = null;
@@ -280,16 +292,113 @@ async function saveDogfoodingUserAccount(
     const fallback = text || `HTTP ${response.status}`;
     throw new Error(formatFastApiErrorBody(parsed, fallback));
   }
-  const body = parsed as DogfoodingAccountSaveResponse | null;
+  const saved = parsed as DogfoodingAccountSaveResponse | null;
+  if (
+    !saved ||
+    typeof saved.ok !== "boolean" ||
+    saved.ok !== true ||
+    typeof saved.path !== "string"
+  ) {
+    throw new Error("保存接口返回格式异常（期望 { ok: true, path: string }）");
+  }
+  return saved;
+}
+
+async function configureDogfoodingProviderApiKey(
+  proxyApiKey: string,
+): Promise<DogfoodingProviderConfigResponse> {
+  const url = new URL(
+    "/api/dogfooding-account/configure-provider",
+    window.location.origin,
+  ).href;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: buildQwenPawApiHeaders(),
+    body: JSON.stringify({ proxy_api_key: proxyApiKey.trim() }),
+  });
+  const text = await response.text();
+  let parsed: unknown = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!response.ok) {
+    const fallback = text || `HTTP ${response.status}`;
+    throw new Error(formatFastApiErrorBody(parsed, fallback));
+  }
+  const body = parsed as DogfoodingProviderConfigResponse | null;
   if (
     !body ||
     typeof body.ok !== "boolean" ||
     body.ok !== true ||
-    typeof body.path !== "string"
+    typeof body.provider_id !== "string"
   ) {
-    throw new Error("保存接口返回格式异常（期望 { ok: true, path: string }）");
+    throw new Error(
+      "Provider 配置接口返回格式异常（期望 { ok: true, provider_id: string }）",
+    );
   }
   return body;
+}
+
+async function persistDogfoodingLoginResult(
+  account: string | null | undefined,
+  proxyApiKey: string | null | undefined,
+): Promise<PersistNotice> {
+  const accountTrim = account?.trim() ?? "";
+  const apiKeyTrim = proxyApiKey?.trim() ?? "";
+
+  if (!accountTrim && !apiKeyTrim) {
+    return {
+      kind: "skipped",
+      reason: "SSO 返回中无工号与 API Key，已跳过写入",
+    };
+  }
+
+  let path: string | undefined;
+  let providerConfigured = false;
+
+  if (accountTrim) {
+    try {
+      const saved = await saveDogfoodingUserAccount(
+        accountTrim,
+        apiKeyTrim || undefined,
+      );
+      path = saved.path;
+      providerConfigured = Boolean(saved.provider_configured);
+    } catch (err) {
+      return {
+        kind: "error",
+        scope: "account",
+        message:
+          err instanceof Error ? err.message : "调用本机保存工号接口失败",
+      };
+    }
+  }
+
+  if (apiKeyTrim && !providerConfigured) {
+    try {
+      await configureDogfoodingProviderApiKey(apiKeyTrim);
+      providerConfigured = true;
+    } catch (err) {
+      return {
+        kind: "error",
+        scope: "provider",
+        message:
+          err instanceof Error
+            ? err.message
+            : "写入 AgentScope Dogfooding 模型配置失败",
+      };
+    }
+  }
+
+  return {
+    kind: "success",
+    path,
+    providerConfigured,
+  };
 }
 
 function readSubmittedFeedback(): Record<string, ScoreLabel> {
@@ -608,23 +717,9 @@ function DogfoodingJoinPage() {
           proxyApiKey: proxyApiKey || null,
         });
 
-        const accountTrim = account?.trim();
-        if (accountTrim) {
-          try {
-            const saved = await saveDogfoodingUserAccount(accountTrim);
-            setPersistNotice({ kind: "success", path: saved.path });
-          } catch (err) {
-            setPersistNotice({
-              kind: "error",
-              message:
-                err instanceof Error ? err.message : "调用本机保存工号接口失败",
-            });
-          }
-        } else {
-          setPersistNotice({
-            kind: "skipped",
-            reason: "SSO 返回中无工号，已跳过写入本机 dogfooding 用户文件",
-          });
+        const notice = await persistDogfoodingLoginResult(account, proxyApiKey);
+        if (!cancelled) {
+          setPersistNotice(notice);
         }
         try {
           sessionStorage.setItem(dedupeKey, "done");
@@ -731,17 +826,30 @@ function DogfoodingJoinPage() {
               </Descriptions.Item>
             </Descriptions>
             {persistNotice?.kind === "success" ? (
-              <Alert
-                type="success"
-                showIcon
-                style={{ marginBottom: 12 }}
-                message="已写入本机 dogfooding 用户文件"
-                description={
-                  <AntText code copyable>
-                    {persistNotice.path}
-                  </AntText>
-                }
-              />
+              <>
+                {persistNotice.path ? (
+                  <Alert
+                    type="success"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message="已写入本机 dogfooding 用户文件"
+                    description={
+                      <AntText code copyable>
+                        {persistNotice.path}
+                      </AntText>
+                    }
+                  />
+                ) : null}
+                {persistNotice.providerConfigured ? (
+                  <Alert
+                    type="success"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message="API Key 已自动写入 AgentScope Dogfooding 模型配置"
+                    description="可在「设置 → 模型」中确认；无需再手动复制粘贴。"
+                  />
+                ) : null}
+              </>
             ) : null}
             {persistNotice?.kind === "skipped" ? (
               <Alert
@@ -756,7 +864,11 @@ function DogfoodingJoinPage() {
                 type="error"
                 showIcon
                 style={{ marginBottom: 12 }}
-                message="保存工号到本机失败"
+                message={
+                  persistNotice.scope === "provider"
+                    ? "写入模型配置失败"
+                    : "保存工号到本机失败"
+                }
                 description={persistNotice.message}
               />
             ) : null}

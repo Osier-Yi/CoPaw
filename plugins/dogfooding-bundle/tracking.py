@@ -96,7 +96,8 @@ def lookup_parent_rpc_id(
 
 def lookup_trace_id(conversation_id: str) -> str:
     return _LATEST_SPAN_CTX_BY_CONV.get(conversation_id, {}).get(
-        "trace_id", ""
+        "trace_id",
+        "",
     )
 
 
@@ -107,7 +108,7 @@ def build_sam(
     pid: str = TRACKING_PID,
     scene: str = TRACKING_SCENE,
 ) -> str:
-    """Build composite sam id: ``${pid}.${scene}.${conversation_id}.${trace_id}``."""
+    """Build composite sam id from pid, scene, conversation, trace."""
     return f"{pid}.{scene}.{conversation_id}.{trace_id}"
 
 
@@ -207,7 +208,8 @@ def _emit_platform_span(
                     return
                 if conversation_id:
                     span.set_attribute(
-                        "gen_ai.conversation.id", conversation_id
+                        "gen_ai.conversation.id",
+                        conversation_id,
                     )
                 if user_id:
                     span.set_attribute("alibaba.base.emp_id", user_id)
