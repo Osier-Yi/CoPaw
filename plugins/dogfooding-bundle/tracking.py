@@ -95,7 +95,9 @@ def lookup_parent_rpc_id(
 
 
 def lookup_trace_id(conversation_id: str) -> str:
-    return _LATEST_SPAN_CTX_BY_CONV.get(conversation_id, {}).get("trace_id", "")
+    return _LATEST_SPAN_CTX_BY_CONV.get(conversation_id, {}).get(
+        "trace_id", ""
+    )
 
 
 def build_sam(
@@ -204,7 +206,9 @@ def _emit_platform_span(
                 if not span.is_recording():
                     return
                 if conversation_id:
-                    span.set_attribute("gen_ai.conversation.id", conversation_id)
+                    span.set_attribute(
+                        "gen_ai.conversation.id", conversation_id
+                    )
                 if user_id:
                     span.set_attribute("alibaba.base.emp_id", user_id)
                 event_attrs: Dict[str, bool | str | int | float] = {}

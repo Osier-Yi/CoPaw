@@ -81,7 +81,9 @@ def patch_dingtalk_channel() -> None:
     try:
         from qwenpaw.app.channels.dingtalk.channel import DingTalkChannel
     except ImportError:
-        logger.warning("DingTalk channel unavailable; feedback card hook skipped")
+        logger.warning(
+            "DingTalk channel unavailable; feedback card hook skipped"
+        )
         return
 
     if getattr(DingTalkChannel, "_dogfooding_feedback_patched", False):
@@ -130,9 +132,13 @@ def patch_dingtalk_channel() -> None:
 
         payload = build_dingtalk_feedback_action_card(trace_id)
         try:
-            await self._send_payload_via_session_webhook(session_webhook, payload)
+            await self._send_payload_via_session_webhook(
+                session_webhook, payload
+            )
         except Exception:
-            logger.debug("Failed to send DingTalk feedback card", exc_info=True)
+            logger.debug(
+                "Failed to send DingTalk feedback card", exc_info=True
+            )
 
     DingTalkChannel._on_process_completed = patched_completed
     DingTalkChannel._dogfooding_feedback_patched = True

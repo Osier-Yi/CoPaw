@@ -300,8 +300,7 @@ def build_dingtalk_reason_action_card() -> dict:
                 {
                     "title": reason[:20],
                     "actionURL": (
-                        "dtmd://dingtalkclient/sendMessage?"
-                        f"content={idx}"
+                        "dtmd://dingtalkclient/sendMessage?" f"content={idx}"
                     ),
                 }
                 for idx, reason in enumerate(BAD_FEEDBACK_REASONS[:4], start=1)

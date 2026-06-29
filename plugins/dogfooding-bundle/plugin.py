@@ -33,7 +33,13 @@ from .feedback_service import (
     record_qa_turn,
     submit_feedback,
 )
-from .tracking import MODEL_ID, lookup_parent_rpc_id, lookup_trace_id, remember_chat_span_link, remember_trace_id
+from .tracking import (
+    MODEL_ID,
+    lookup_parent_rpc_id,
+    lookup_trace_id,
+    remember_chat_span_link,
+    remember_trace_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -333,6 +339,7 @@ class DogfoodingBundlePlugin:
         Args:
             api: PluginApi instance.
         """
+
         def startup():
             self._patch_query_handler()
             self._patch_turn_metadata()
@@ -686,7 +693,9 @@ def _migrate_saved_provider_config() -> None:
     try:
         from qwenpaw.constant import SECRET_DIR
 
-        config_path = SECRET_DIR / "providers" / "plugin" / f"{_PROVIDER_ID}.json"
+        config_path = (
+            SECRET_DIR / "providers" / "plugin" / f"{_PROVIDER_ID}.json"
+        )
         if not config_path.is_file():
             return
 
@@ -696,7 +705,8 @@ def _migrate_saved_provider_config() -> None:
         current_url = str(data.get("base_url") or "").strip().rstrip("/")
         target_url = _BASE_URL.rstrip("/")
         if current_url in _LEGACY_BASE_URLS or (
-            current_url and current_url != target_url
+            current_url
+            and current_url != target_url
             and "121.43.136.192:8081" in current_url
         ):
             data["base_url"] = _BASE_URL

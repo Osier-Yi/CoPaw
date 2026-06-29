@@ -4,7 +4,18 @@ if (!qwenpaw?.host?.React || !qwenpaw?.host?.antd) {
 }
 
 const { React, antd, antdIcons } = qwenpaw.host;
-const { Card, Button, Alert, Typography, Descriptions, Modal, Checkbox, Input, Space, Divider } = antd;
+const {
+  Card,
+  Button,
+  Alert,
+  Typography,
+  Descriptions,
+  Modal,
+  Checkbox,
+  Input,
+  Space,
+  Divider,
+} = antd;
 const { LoginOutlined, LikeOutlined, MehOutlined, DislikeOutlined } = antdIcons;
 const { Text: AntText } = Typography;
 
@@ -302,7 +313,9 @@ function markFeedbackSubmitted(traceId: string, label: ScoreLabel): void {
   }
 }
 
-function extractDogfoodingMeta(data: Record<string, unknown>): DogfoodingMeta | null {
+function extractDogfoodingMeta(
+  data: Record<string, unknown>,
+): DogfoodingMeta | null {
   const output = data?.output;
   if (!Array.isArray(output)) return null;
   for (let i = output.length - 1; i >= 0; i -= 1) {
@@ -370,9 +383,7 @@ function FeedbackBar({ data }: { data: Record<string, unknown> }) {
   const meta = extractDogfoodingMeta(data);
   const traceId = meta?.trace_id || "";
   const conversationId =
-    meta?.session_id ||
-    qwenpaw.host.getCurrentSessionId?.() ||
-    "";
+    meta?.session_id || qwenpaw.host.getCurrentSessionId?.() || "";
   // Remember the submitted state per message. Prefer the real trace_id, but
   // fall back to a stable message id so freshly-streamed replies (whose meta
   // isn't persisted yet) still behave correctly.
@@ -383,9 +394,7 @@ function FeedbackBar({ data }: { data: Record<string, unknown> }) {
   );
   const [error, setError] = React.useState("");
   const [reasonOpen, setReasonOpen] = React.useState(false);
-  const [selectedReasons, setSelectedReasons] = React.useState(
-    [] as string[],
-  );
+  const [selectedReasons, setSelectedReasons] = React.useState([] as string[]);
   const [comment, setComment] = React.useState("");
 
   React.useEffect(() => {
@@ -401,11 +410,7 @@ function FeedbackBar({ data }: { data: Record<string, unknown> }) {
     return null;
   }
 
-  const submit = async (
-    label: ScoreLabel,
-    reason = "",
-    extraComment = "",
-  ) => {
+  const submit = async (label: ScoreLabel, reason = "", extraComment = "") => {
     setSubmitting(true);
     setError("");
     try {
@@ -451,10 +456,10 @@ function FeedbackBar({ data }: { data: Record<string, unknown> }) {
     submittedLabel === "good"
       ? "优秀"
       : submittedLabel === "fine"
-        ? "一般"
-        : submittedLabel === "bad"
-          ? "糟糕"
-          : "";
+      ? "一般"
+      : submittedLabel === "bad"
+      ? "糟糕"
+      : "";
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -495,12 +500,7 @@ function FeedbackBar({ data }: { data: Record<string, unknown> }) {
         </Space>
       )}
       {error ? (
-        <Alert
-          style={{ marginTop: 8 }}
-          type="error"
-          showIcon
-          message={error}
-        />
+        <Alert style={{ marginTop: 8 }} type="error" showIcon message={error} />
       ) : null}
       <Modal
         title="请告诉我们哪里不好"
