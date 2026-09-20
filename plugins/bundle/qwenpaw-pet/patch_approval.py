@@ -30,10 +30,7 @@ def patch_approval_service() -> None:
         return
 
     from qwenpaw.app.approvals.service import ApprovalService
-    from qwenpaw.security.tool_guard.approval import (
-        ApprovalDecision,
-        ApprovalScope,
-    )
+    from qwenpaw.security.tool_guard.approval import ApprovalDecision
 
     _ORIG_CREATE_PENDING = ApprovalService.create_pending
     _ORIG_RESOLVE_REQUEST = ApprovalService.resolve_request
@@ -69,13 +66,18 @@ def patch_approval_service() -> None:
         self,
         request_id: str,
         decision: Any,
-        scope: ApprovalScope | None = None,
+        *args: Any,
+        **kwargs: Any,
     ):
+        # Preserve scope, actor identity, and future service parameters.
+        # Restating the native signature broke Console approvals when the
+        # service added the keyword-only actor parameter (issue #7856).
         resolved = await _ORIG_RESOLVE_REQUEST(
             self,
             request_id,
             decision,
-            scope=scope,
+            *args,
+            **kwargs,
         )
         if resolved is None:
             return None

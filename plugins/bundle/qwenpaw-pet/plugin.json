@@ -1,7 +1,7 @@
 {
   "id": "qwenpaw-pet",
   "name": "QwenPaw Pet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Emit QwenPaw backend lifecycle events to QwenPaw Pet Desktop.",
   "description_i18n": {
     "zh-CN": "将 QwenPaw 后端生命周期事件同步至 QwenPaw Pet 桌面宠物。",
@@ -22,7 +22,7 @@
   ],
   "qwenpaw_version": {
     "min": "1.1.5",
-    "max": "2.1.0"
+    "max": "2.3.0"
   },
   "meta": {
     "desktop_url": "http://127.0.0.1:8765"
