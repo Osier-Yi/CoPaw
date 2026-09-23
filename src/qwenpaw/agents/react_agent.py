@@ -35,6 +35,10 @@ from .context.overflow_recovery import call_with_overflow_recovery
 from .skill_system import get_workspace_skills_dir
 from .utils.image_freezing import freeze_local_images_async
 from .utils.message_request_normalizer import _is_media_block
+from .utils.text_block_utils import (
+    drop_empty_text_blocks,
+    sanitize_empty_text_blocks,
+)
 from ..modes.coding import CodingModeMixin
 from ..utils.io_utils import run_sync_io
 from ..constant import (
@@ -47,6 +51,7 @@ from ..loop.gates import StopAction, StopHandlerResult
 from ..providers.error_utils import extract_status_code
 from ..providers.fallback_chat_model import install_fallback_notice_sink
 from ..providers.model_capability_cache import get_capability_cache
+from ..providers.adapters.request_context import model_session
 from ..utils.tool_call_extra import (
     collect_transient_tool_call_extras,
     persist_tool_call_extras,
@@ -187,6 +192,7 @@ class QwenPawAgent(CodingModeMixin, Agent):
         """
         self._agent_config = agent_config
         self._request_context = dict(request_context or {})
+        self._model_session_id = uuid.uuid4().hex
         self._workspace_dir = workspace_dir
         self._language = agent_config.language
         # Optional context-management strategy. When None, the agent keeps its
@@ -299,7 +305,12 @@ class QwenPawAgent(CodingModeMixin, Agent):
 
     def _save_to_context(self, blocks: Any, usage: Any = None) -> None:
         """Append blocks, then let the context manager write them through."""
-        block_list = list(blocks or [])
+        # A reasoning-only turn arrives as an empty text block.  Persisting
+        # it replays ``{"type": "output_text", "text": ""}`` on every later
+        # request, which providers such as Volcengine Ark reject with
+        # ``400 MissingParameter: input.content.text`` — one empty turn
+        # would otherwise poison the rest of the session.
+        block_list = drop_empty_text_blocks(list(blocks or []))
         tool_call_extras = collect_transient_tool_call_extras(block_list)
 
         super()._save_to_context(block_list, usage)
@@ -390,19 +401,24 @@ class QwenPawAgent(CodingModeMixin, Agent):
             )
 
     def _sanitize_loaded_context(self) -> None:
-        """Strip orphan tool_result messages from the loaded context.
+        """Strip replay-breaking blocks from the loaded context.
 
         Orphan tool_result messages (whose tool_call has been evicted)
         can persist in session JSON and leak across session boundaries
         when loaded by ``load_state_dict``.  Without sanitization here
         they reach the model and cause ``400 - Messages with role 'tool'
         must be a response to a preceding message with 'tool_calls'``.
+
+        Empty assistant text blocks are the same class of defect with a
+        different block type: they make providers such as Volcengine Ark
+        answer ``400 MissingParameter: input.content.text``.  Sessions
+        poisoned before the save-time guard existed heal here.
         """
         try:
             from .utils.tool_message_utils import _sanitize_tool_messages
 
-            self.state.context = _sanitize_tool_messages(
-                self.state.context,
+            self.state.context = sanitize_empty_text_blocks(
+                _sanitize_tool_messages(self.state.context),
             )
         except Exception:
             # Best-effort: a corrupt context will be caught again by
@@ -1215,8 +1231,26 @@ class QwenPawAgent(CodingModeMixin, Agent):
     async def _reply(self, **kwargs: Any) -> Any:
         """Override kept as extension point; hint injection moved to
         ``_reasoning`` so each ReAct iteration picks up new hints."""
-        async for evt in super()._reply(**kwargs):
-            yield evt
+        stream = super()._reply(**kwargs)
+        try:
+            while True:
+                # Heartbeat consumers may resume each event in a new task.
+                # Never carry a ContextVar token across an outward yield.
+                with model_session(
+                    self._request_context,
+                    self._model_session_id,
+                ):
+                    try:
+                        evt = await anext(stream)
+                    except StopAsyncIteration:
+                        return
+                yield evt
+        finally:
+            with model_session(
+                self._request_context,
+                self._model_session_id,
+            ):
+                await stream.aclose()
 
     def _register_tool_call_hooks(self) -> None:
         """Register per-tool default timeouts on the ToolCoordinator."""
