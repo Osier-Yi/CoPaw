@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Alert,
   Button,
   Empty,
   Input,
+  Image,
   Pagination,
   Segmented,
   Select,
@@ -13,6 +14,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import DOMPurify from "dompurify";
 import ReactMarkdown from "react-markdown";
+import { CircleCheck } from "lucide-react";
 import {
   communityConnectionApi,
   type CommunityConnectionStatus,
@@ -21,14 +23,27 @@ import { MarketplaceHeader } from "../components/MarketplaceHeader";
 import { communityPostsApi, type Post, type Comment, type Page } from "./api";
 import { isCustomEmoji, markdownWithCustomEmoji } from "./customEmoji";
 import { COMMUNITY_FILTER_TYPES, COMMUNITY_SORTS } from "@/constants/community";
-import {
-  openExternalLinkChecked,
-  openExternalLink,
-} from "@/utils/openExternalLink";
+import { openExternalLink } from "@/utils/openExternalLink";
 import { communityErrorKey } from "@/utils/communityError";
-import { useAppMessage } from "@/hooks/useAppMessage";
-import { ExternalLink } from "lucide-react";
 import styles from "./index.module.less";
+
+const PostComposer = lazy(() =>
+  import("@/pages/CommunityFeedback/PostComposer").then((module) => ({
+    default: module.PostComposer,
+  })),
+);
+
+function QuestionStatus({ post }: { post: Post }) {
+  const { t } = useTranslation();
+  if (post.article_type !== "question" || post.qa_status !== "solved")
+    return null;
+  return (
+    <span className={styles.solvedStatus}>
+      <CircleCheck size={14} aria-hidden="true" />
+      {t("communityPage.solved")}
+    </span>
+  );
+}
 
 function CommunityAnchor({
   href,
@@ -117,6 +132,23 @@ function CommentThread({
       >
         {markdownWithCustomEmoji(comment.content)}
       </ReactMarkdown>
+      {!!comment.image_urls?.length && (
+        <div className={styles.commentImages}>
+          <Image.PreviewGroup>
+            {Array.from(new Set(comment.image_urls))
+              .filter((url) => /^https?:\/\//i.test(url))
+              .map((url, index) => (
+                <Image
+                  key={url}
+                  src={url}
+                  alt={t("communityPage.commentImage", { number: index + 1 })}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              ))}
+          </Image.PreviewGroup>
+        </div>
+      )}
       <Button type="text" size="small" onClick={() => onReply(comment)}>
         {t("communityPage.reply")}
       </Button>
@@ -209,7 +241,10 @@ function PostDetail({ id }: { id: string }) {
       <Spin spinning={loading}>
         {post && (
           <article>
-            <h1>{post.title}</h1>
+            <div className={styles.postTitle}>
+              <h1>{post.title}</h1>
+              <QuestionStatus post={post} />
+            </div>
             <div className={styles.meta}>
               {post.author_name} · {post.published_at?.replace("T", " ")} ·{" "}
               {post.article_type_label}
@@ -296,12 +331,9 @@ function PostDetail({ id }: { id: string }) {
 
 export default function CommunityPage() {
   const { t } = useTranslation();
-  const { message } = useAppMessage();
-  const openEditor = (path: "write" | "ask") => {
-    void openExternalLinkChecked(
-      `https://platform.agentscope.io/community/${path}`,
-    ).catch((err) => message.error(t(communityErrorKey(err))));
-  };
+  const [editor, setEditor] = useState<"question" | "discussion">();
+  const openEditor = (path: "write" | "ask") =>
+    setEditor(path === "ask" ? "question" : "discussion");
   const [params, setParams] = useSearchParams();
   const id = params.get("post");
   const page = Math.max(1, Number(params.get("page")) || 1);
@@ -345,6 +377,14 @@ export default function CommunityPage() {
   return (
     <div className={styles.page}>
       <MarketplaceHeader activeSection="community" />
+      {editor && (
+        <Suspense fallback={<Spin />}>
+          <PostComposer
+            initialType={editor}
+            onClose={() => setEditor(undefined)}
+          />
+        </Suspense>
+      )}
       <div className={styles.scroll}>
         <div className={styles.content}>
           {id ? (
@@ -358,27 +398,21 @@ export default function CommunityPage() {
                     {t("communityPage.description")}
                   </p>
                 </div>
-                <div>
+                <div className={styles.headingActions}>
                   <Link to="/settings/community">
                     {t("communityPage.account")}
                   </Link>
-                  <Button
-                    style={{ marginLeft: 16 }}
-                    onClick={() => openEditor("ask")}
-                  >
+                  <Button onClick={() => openEditor("ask")}>
                     {t("communityPage.askOnPlatform")}
                   </Button>
-                  <Button
-                    type="primary"
-                    style={{ marginLeft: 16 }}
-                    onClick={() => openEditor("write")}
-                    icon={<ExternalLink size={14} aria-hidden="true" />}
-                  >
+                  <Button type="primary" onClick={() => openEditor("write")}>
                     {t("communityPage.writeOnPlatform")}
                   </Button>
                 </div>
               </div>
-              <p className={styles.meta}>{t("communityPage.editorHelp")}</p>
+              <p className={`${styles.meta} ${styles.editorHelp}`}>
+                {t("communityPage.editorHelp")}
+              </p>
               <div className={styles.toolbar}>
                 <Segmented
                   aria-label={t("communityPage.sort")}
@@ -443,7 +477,10 @@ export default function CommunityPage() {
                       <div className={styles.meta}>
                         {post.author_name} · {post.article_type_label}
                       </div>
-                      <h2>{post.title}</h2>
+                      <div className={styles.postTitle}>
+                        <h2>{post.title}</h2>
+                        <QuestionStatus post={post} />
+                      </div>
                       <p>{post.summary}</p>
                       <div className={styles.meta}>
                         {post.published_at?.slice(0, 10)} ·{" "}

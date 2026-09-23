@@ -217,22 +217,28 @@ it("keeps cached posts with actionable network feedback", async () => {
   expect(screen.queryByText(/private details/)).toBeNull();
   expect(screen.queryByText("communityPage.empty")).toBeNull();
 });
-it("opens Platform editors without publishing or replacing the app", async () => {
+it("opens the local article and question composers without publishing", async () => {
   renderWithProviders(<CommunityPage />);
   fireEvent.click(
     screen.getByRole("button", { name: "communityPage.writeOnPlatform" }),
   );
-  expect(openExternalLinkChecked).toHaveBeenCalledWith(
-    "https://platform.agentscope.io/community/write",
-  );
+  expect(
+    await screen.findByRole("radio", { name: "communityAssist.article" }),
+  ).toBeChecked();
+  expect(
+    screen.getByRole("button", { name: "communityCompose.publish" }),
+  ).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
   fireEvent.click(
     screen.getByRole("button", { name: "communityPage.askOnPlatform" }),
   );
-  expect(openExternalLinkChecked).toHaveBeenCalledWith(
-    "https://platform.agentscope.io/community/ask",
-  );
+  expect(
+    await screen.findByRole("radio", { name: "communityPage.question" }),
+  ).toBeChecked();
+  expect(openExternalLinkChecked).not.toHaveBeenCalled();
   expect(communityPostsApi.comment).not.toHaveBeenCalled();
 });
+
 it("does not hide public content when account status cannot load", async () => {
   vi.mocked(communityConnectionApi.status).mockRejectedValueOnce(
     new Error("offline"),

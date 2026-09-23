@@ -1,18 +1,10 @@
-import { lazy, Suspense, useState } from "react";
-import { Dropdown } from "antd";
-import { ChevronDown, MessageSquareText, LoaderCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { MessageSquareText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { InstallationOrigin } from "@/api/types/community";
-import { communityConnectionApi } from "@/api/modules/community";
-import { useAppMessage } from "@/hooks/useAppMessage";
 import { PostComposer } from "@/pages/CommunityFeedback/PostComposer";
+import { lookupInstalledPluginLinks } from "@/api/modules/communityReport";
 import styles from "./index.module.less";
-
-const ResourceReportModal = lazy(() =>
-  import("@/pages/CommunityFeedback/ResourceReportModal").then((module) => ({
-    default: module.ResourceReportModal,
-  })),
-);
 
 export function hasCommunityFeedback(
   origin: InstallationOrigin | null | undefined,
@@ -28,6 +20,8 @@ export function hasCommunityFeedback(
 interface CommunityFeedbackProps {
   origin?: InstallationOrigin | null;
   resourceName: string;
+  installedPluginId?: string;
+  installedVersion?: string;
   /** Cards reserve their own top row; lists keep the action beside the name. */
   variant?: "corner" | "inline";
 }
@@ -35,51 +29,81 @@ interface CommunityFeedbackProps {
 export function CommunityFeedback({
   origin,
   resourceName,
+  installedPluginId,
+  installedVersion,
   variant = "corner",
 }: CommunityFeedbackProps) {
   const { t } = useTranslation();
-  const { message } = useAppMessage();
-  const [loading, setLoading] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
-  if (!hasCommunityFeedback(origin)) return null;
-
-  const handleOpen = () => setComposeOpen(true);
-  const handleAssist = async () => {
-    setLoading(true);
-    try {
-      const status = await communityConnectionApi.status();
-      if (status.status === "connected") setReportOpen(true);
-      else setComposeOpen(true);
-    } catch {
-      message.error(t("communityCompose.loginRequired"));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [resolved, setResolved] = useState<{
+    id: string;
+    origin: InstallationOrigin;
+  }>();
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    setFailed(false);
+    if (hasCommunityFeedback(origin) || !installedPluginId) return;
+    let active = true;
+    lookupInstalledPluginLinks(retry > 0)
+      .then((data) => {
+        if (!active) return;
+        const found = data.resources.find(
+          (item) => item.local_id === installedPluginId,
+        );
+        setResolved(
+          found ? { id: installedPluginId, origin: found.origin } : undefined,
+        );
+        setFailed(data.lookup_failed_ids?.includes(installedPluginId) || false);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [origin, installedPluginId, retry]);
+  const linkedOrigin = hasCommunityFeedback(origin)
+    ? origin
+    : resolved && resolved.id === installedPluginId
+    ? {
+        ...resolved.origin,
+        installed_version:
+          installedVersion || resolved.origin.installed_version,
+      }
+    : undefined;
+  if (!hasCommunityFeedback(linkedOrigin))
+    return failed ? (
+      <button
+        type="button"
+        className={styles.button}
+        title={t("communityFeedback.lookupFailed")}
+        onClick={(event) => {
+          event.stopPropagation();
+          setRetry((value) => value + 1);
+        }}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        {t("communityFeedback.retryLookup")}
+      </button>
+    ) : null;
 
   const button = (
     <button
       type="button"
       className={styles.button}
-      disabled={loading}
-      aria-busy={loading}
       aria-label={t("communityFeedback.forResource", {
-        defaultValue: "Report an issue with {{name}}",
+        defaultValue: "Feedback and discussion for {{name}}",
         name: resourceName,
       })}
       onClick={(event) => {
         event.stopPropagation();
-        void handleOpen();
+        setComposeOpen(true);
       }}
       onKeyDown={(event) => event.stopPropagation()}
     >
-      {loading ? (
-        <LoaderCircle size={12} className={styles.spinner} aria-hidden="true" />
-      ) : (
-        <MessageSquareText size={12} aria-hidden="true" />
-      )}
-      {t("communityFeedback.reportIssue", "Report an issue")}
+      <MessageSquareText size={14} strokeWidth={1.75} aria-hidden="true" />
+      {t("communityFeedback.reportIssue", "Feedback & discussion")}
     </button>
   );
   return (
@@ -89,38 +113,12 @@ export function CommunityFeedback({
       onKeyDown={(event) => event.stopPropagation()}
     >
       {button}
-      <Dropdown
-        trigger={["click"]}
-        menu={{
-          items: [{ key: "assist", label: t("communityReport.useAgent") }],
-          onClick: () => void handleAssist(),
-        }}
-      >
-        <button
-          type="button"
-          className={styles.button}
-          aria-label={t("communityReport.moreOptions")}
-          disabled={loading}
-        >
-          <ChevronDown size={12} aria-hidden="true" />
-        </button>
-      </Dropdown>
       {composeOpen && (
         <PostComposer
           onClose={() => setComposeOpen(false)}
-          origin={origin}
+          origin={linkedOrigin}
           resourceName={resourceName}
         />
-      )}
-      {reportOpen && (
-        <Suspense fallback={null}>
-          <ResourceReportModal
-            open={reportOpen}
-            onClose={() => setReportOpen(false)}
-            origin={origin}
-            resourceName={resourceName}
-          />
-        </Suspense>
       )}
     </span>
   );

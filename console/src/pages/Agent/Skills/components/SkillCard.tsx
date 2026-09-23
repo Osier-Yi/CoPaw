@@ -17,7 +17,10 @@ import dayjs from "dayjs";
 import type { SkillSpec } from "../../../../api/types";
 import { useTranslation } from "react-i18next";
 import { normalizeSkillChannels } from "../../../../utils/skill";
-import { CommunityFeedback } from "@/components/CommunityFeedback";
+import {
+  CommunityFeedback,
+  hasCommunityFeedback,
+} from "@/components/CommunityFeedback";
 import styles from "../index.module.less";
 
 interface SkillCardProps {
@@ -198,16 +201,21 @@ export const SkillCard = React.memo(function SkillCard({
       className={`${styles.skillCard} ${selected ? styles.selectedCard : ""}`}
       style={{ cursor: "pointer" }}
     >
-      <CommunityFeedback
-        origin={skill.installation_origin}
-        resourceName={skill.name}
-      />
       {/* Top row: Icon (left) + Status badge + Checkbox (right) */}
       <div className={styles.cardTopRow}>
         <span className={styles.fileIcon}>
           {getSkillVisual(skill.name, skill.emoji)}
         </span>
         <div className={styles.cardTopRight}>
+          {hasCommunityFeedback(skill.installation_origin) && (
+            <div className={styles.cardFeedback}>
+              <CommunityFeedback
+                origin={skill.installation_origin}
+                resourceName={skill.name}
+                variant="inline"
+              />
+            </div>
+          )}
           <span
             className={`${styles.statusBadge} ${
               skill.enabled ? styles.status_enabled : styles.status_disabled

@@ -3,16 +3,20 @@
 
 from __future__ import annotations
 
-from html import escape
-from typing import Literal
+import asyncio
+import base64
+import re
+from typing import Any, Literal
 from urllib.parse import quote, parse_qs, urlsplit
 
 import httpx
+from markdown_it import MarkdownIt
 from fastapi import APIRouter, HTTPException, Request, Query, Path
 from pydantic import BaseModel, Field
 
 from .community_connection import get_service, _call
 from ..community_connection import CommunityConnectionError
+from ..community_report import ReportScreenshot
 
 from ..community_feedback import FeedbackLinkError, resolve_feedback_link
 from ...installation_origin import InstallationOrigin
@@ -193,6 +197,74 @@ async def community_post_resources(
     return {"resources": resources}
 
 
+class CommunityImageRequest(ReportScreenshot):
+    account_id: str = Field(min_length=1, max_length=128)
+    reviewed: bool = False
+
+
+@router.post("/media")
+async def upload_community_image(
+    body: CommunityImageRequest,
+    request: Request,
+):
+    """Upload only a masked image explicitly approved for public use."""
+    if not body.reviewed:
+        raise HTTPException(status_code=422, detail="image_not_reviewed")
+    header, encoded = body.data_url.split(",", 1)
+    mime = header[5:].split(";", 1)[0]
+    extension = mime.split("/", 1)[1]
+    result = await _call(
+        get_service(request).community_request(
+            "POST",
+            "/api/v1/community/media",
+            account_id=body.account_id,
+            params={"purpose": "body"},
+            files={
+                "file": (
+                    f"screenshot.{extension}",
+                    base64.b64decode(encoded),
+                    mime,
+                ),
+            },
+        ),
+    )
+    url = result.get("url", "")
+    identifier = result.get("media_id")
+    if (
+        not _valid_media_url(url)
+        or not isinstance(identifier, str)
+        or not identifier
+    ):
+        raise HTTPException(
+            status_code=502,
+            detail="invalid_platform_response",
+        )
+    return {"url": url, "media_id": identifier}
+
+
+def _valid_media_url(url: Any) -> bool:
+    if not isinstance(url, str):
+        return False
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and bool(parsed.netloc)
+        and not parsed.username
+        and not parsed.password
+        and not re.search(r'[\s<>"()]', url)
+    )
+
+
+def _post_html(content: str) -> str:
+    """Render Markdown for Platform without accepting raw HTML."""
+    return MarkdownIt("commonmark", {"html": False, "breaks": True}).render(
+        content,
+    )
+
+
 class CommunityPostRequest(BaseModel):
     title: str = Field(min_length=1, max_length=256)
     content: str = Field(min_length=1, max_length=65536)
@@ -204,7 +276,12 @@ class CommunityPostRequest(BaseModel):
         "discussion",
     ] = "question"
     account_id: str = Field(min_length=1, max_length=128)
+    media_ids: list[str] = Field(default_factory=list, max_length=20)
     origin: InstallationOrigin | None = None
+    origins: list[InstallationOrigin] = Field(
+        default_factory=list,
+        max_length=6,
+    )
 
 
 @router.post("/posts")
@@ -216,28 +293,56 @@ async def publish_community_post(body: CommunityPostRequest, request: Request):
     status = await _call(service.status(local=False))
     if not status.get("account") or status["account"]["id"] != body.account_id:
         raise HTTPException(status_code=409, detail="community_login_required")
-    payload = {
+    payload: dict[str, Any] = {
         "title": body.title.strip(),
         "body_text": body.content,
-        "body_html": "<p>"
-        + escape(body.content).replace("\n", "<br>")
-        + "</p>",
+        "body_html": _post_html(body.content),
+        "media_ids": body.media_ids,
         "article_type": body.article_type,
         "related_skill_ids": [],
         "related_plugin_ids": [],
     }
-    if body.origin:
-        result = await feedback_link(FeedbackLinkRequest(origin=body.origin))
+    origins = ([body.origin] if body.origin else []) + body.origins
+    unique = {
+        (origin.resource_type, origin.resource_id): origin
+        for origin in origins
+    }
+    if any(
+        sum(
+            (item.resource_type == "skill") == skill
+            for item in unique.values()
+        )
+        > 3
+        for skill in (True, False)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="too_many_related_resources",
+        )
+    links = await asyncio.gather(
+        *(
+            feedback_link(FeedbackLinkRequest(origin=item))
+            for item in unique.values()
+        ),
+    )
+    for result in links:
         query = parse_qs(urlsplit(result["url"]).query)
         for param, field in (
             ("relatedSkillId", "related_skill_ids"),
             ("relatedPluginId", "related_plugin_ids"),
         ):
-            payload[field] = query.get(param, [])
+            payload[field] = list(
+                dict.fromkeys(payload[field] + query.get(param, [])),
+            )
+    endpoint = (
+        "/api/v1/community/questions"
+        if body.article_type == "question"
+        else "/api/v1/community/articles"
+    )
     return await _call(
         service.community_request(
             "POST",
-            "/api/v1/community/articles",
+            endpoint,
             account_id=body.account_id,
             json=payload,
         ),

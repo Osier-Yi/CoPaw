@@ -50,3 +50,35 @@
     }
   }
 }
+
+@media (max-width: 600px) {
+  .navigation {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .sectionSwitch {
+    min-width: max-content;
+  }
+}
+
+@media (max-width: 600px) {
+  .sectionSwitch {
+    width: max-content;
+    min-width: 100%;
+    :global(.ant-segmented-group),
+    :global(.qwenpaw-segmented-group) {
+      width: max-content;
+      min-width: 100%;
+    }
+    :global(.ant-segmented-item),
+    :global(.qwenpaw-segmented-item) {
+      flex: 1 0 auto;
+      min-width: max-content;
+    }
+    :global(.ant-segmented-item-label),
+    :global(.qwenpaw-segmented-item-label) {
+      padding-inline: 10px;
+      overflow: visible;
+    }
+  }
+}

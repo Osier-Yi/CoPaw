@@ -1,30 +1,43 @@
 .corner {
   display: flex;
   align-self: stretch;
-  justify-content: flex-start;
-  margin-bottom: 8px;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+  gap: 2px;
 }
 
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  min-height: 26px;
-  padding: 3px 8px;
-  border: 1px solid var(--app-border);
-  border-radius: 4px;
-  background: var(--app-fill-subtle);
-  color: var(--app-text);
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--app-text-secondary) 85%, var(--app-text));
   font: inherit;
   font-size: 12px;
+  font-weight: 500;
   line-height: 18px;
   white-space: nowrap;
   cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+
+  svg {
+    flex-shrink: 0;
+  }
 
   &:hover:not(:disabled) {
-    border-color: var(--app-accent);
-    background: var(--app-fill-faint);
+    color: var(--app-accent-text);
+    background: var(--app-fill-subtle);
+  }
+
+  &:active:not(:disabled) {
+    background: var(--app-fill);
   }
 
   &:focus-visible {
@@ -35,6 +48,12 @@
   &:disabled {
     cursor: wait;
     color: var(--app-text-secondary);
+  }
+}
+
+@media (pointer: coarse) {
+  .button {
+    min-height: 44px;
   }
 }
 
@@ -52,13 +71,13 @@
   .spinner {
     animation: none;
   }
+  .button {
+    transition: none;
+  }
 }
 
 .inline {
   display: inline-flex;
   gap: 2px;
   align-items: center;
-}
-.corner {
-  gap: 2px;
 }

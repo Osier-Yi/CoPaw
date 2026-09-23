@@ -28,6 +28,8 @@ export function usePluginColumns({
           <Space size={8}>
             <CommunityFeedback
               origin={record.installation_origin}
+              installedPluginId={record.id}
+              installedVersion={record.version}
               resourceName={name}
               variant="inline"
             />

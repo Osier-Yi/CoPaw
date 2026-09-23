@@ -186,15 +186,20 @@ export function InstalledPluginList({
                 key={plugin.id}
                 aria-label={plugin.name}
               >
-                <CommunityFeedback
-                  origin={plugin.installation_origin}
-                  resourceName={plugin.name}
-                />
                 <div className={cardStyles.cardTopRow}>
                   <div className={cardStyles.cardIcon}>
                     <Package size={18} />
                   </div>
-                  {renderStatus(plugin)}
+                  <div className={cardStyles.cardTopActions}>
+                    <CommunityFeedback
+                      origin={plugin.installation_origin}
+                      installedPluginId={plugin.id}
+                      installedVersion={plugin.version}
+                      resourceName={plugin.name}
+                      variant="inline"
+                    />
+                    {renderStatus(plugin)}
+                  </div>
                 </div>
                 <div className={cardStyles.cardTitleRow}>
                   <Text
@@ -255,6 +260,8 @@ export function InstalledPluginList({
                     <div className={rowStyles.catalogNameRow}>
                       <CommunityFeedback
                         origin={plugin.installation_origin}
+                        installedPluginId={plugin.id}
+                        installedVersion={plugin.version}
                         resourceName={plugin.name}
                         variant="inline"
                       />

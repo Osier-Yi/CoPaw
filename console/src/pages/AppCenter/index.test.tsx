@@ -239,7 +239,7 @@ describe("AppCenterPage", () => {
     const [path, options] = hoisted.publishPost.mock.calls[0];
     expect(path).toBe("/community/posts");
     expect(JSON.parse(options.body)).toMatchObject({
-      origin,
+      origins: [origin],
       account_id: "test-user",
     });
     expect(hoisted.openExternal).not.toHaveBeenCalled();

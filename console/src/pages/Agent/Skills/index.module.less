@@ -221,8 +221,16 @@
 .cardTopRight {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
-  flex-shrink: 0;
+  min-width: 0;
+  flex: 1;
+}
+.cardFeedback {
+  display: flex;
+  justify-content: flex-end;
+  flex-basis: 100%;
 }
 
 /* Status badge: dot + text */

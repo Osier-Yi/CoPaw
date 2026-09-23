@@ -32,7 +32,7 @@ export function MarketplaceHeader({
     { key: "apps", label: t("nav.apps", "Apps") },
     { key: "plugins", label: t("nav.plugins", "Plugins") },
     { key: "skills", label: t("nav.skills", "Skills") },
-    ...(!isMobile
+    ...(!isMobile || activeSection === "community"
       ? [{ key: "community", label: t("communityCompose.nav", "Community") }]
       : []),
   ];

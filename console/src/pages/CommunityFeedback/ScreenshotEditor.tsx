@@ -23,6 +23,7 @@ export function ScreenshotEditor({
   const { t } = useTranslation();
   const canvas = useRef<HTMLCanvasElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
+  const [selection, setSelection] = useState<number[] | null>(null);
   const [rect, setRect] = useState([0, 0, 25, 25]);
   useEffect(() => {
     let alive = true;
@@ -51,76 +52,129 @@ export function ScreenshotEditor({
     const el = event.currentTarget;
     const bounds = el.getBoundingClientRect();
     return {
-      x: ((event.clientX - bounds.left) * el.width) / bounds.width,
-      y: ((event.clientY - bounds.top) * el.height) / bounds.height,
+      x: Math.max(
+        0,
+        Math.min(
+          el.width,
+          ((event.clientX - bounds.left) * el.width) / bounds.width,
+        ),
+      ),
+      y: Math.max(
+        0,
+        Math.min(
+          el.height,
+          ((event.clientY - bounds.top) * el.height) / bounds.height,
+        ),
+      ),
     };
   };
   return (
     <section className={styles.screenshot}>
-      <canvas
-        ref={canvas}
-        role="img"
-        aria-label={t("communityReport.screenshotPreview", {
-          number: index + 1,
-        })}
-        className={styles.canvas}
-        onPointerDown={(event) => {
-          if (disabled) return;
-          start.current = position(event);
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerUp={(event) => {
-          if (!start.current) return;
-          const end = position(event);
-          const from = start.current;
-          start.current = null;
-          mask(
-            Math.min(from.x, end.x),
-            Math.min(from.y, end.y),
-            Math.abs(end.x - from.x),
-            Math.abs(end.y - from.y),
-          );
-        }}
-        onPointerCancel={() => {
-          start.current = null;
-        }}
-      />
-      <p className={styles.hint}>{t("communityReport.maskHelp")}</p>
-      <Space wrap>
-        {rect.map((value, i) => (
-          <label key={i} className={styles.coordinate}>
-            {t(`communityReport.coordinate${i}`)}
-            <InputNumber
-              size="small"
-              min={0}
-              max={100}
-              value={value}
-              disabled={disabled}
-              aria-label={t(`communityReport.coordinate${i}`)}
-              onChange={(next) =>
-                setRect((current) =>
-                  current.map((old, j) => (j === i ? next ?? 0 : old)),
-                )
-              }
-            />
-          </label>
-        ))}
-        <Button
-          size="small"
-          disabled={disabled}
-          onClick={() => {
-            const el = canvas.current;
-            if (el)
-              mask(
-                (rect[0] * el.width) / 100,
-                (rect[1] * el.height) / 100,
-                (rect[2] * el.width) / 100,
-                (rect[3] * el.height) / 100,
-              );
+      <div className={styles.maskCanvas}>
+        <canvas
+          ref={canvas}
+          role="img"
+          aria-label={t("communityReport.screenshotPreview", {
+            number: index + 1,
+          })}
+          className={styles.canvas}
+          onPointerDown={(event) => {
+            if (disabled || event.button !== 0) return;
+            event.preventDefault();
+            start.current = position(event);
+            setSelection(null);
+            event.currentTarget.setPointerCapture(event.pointerId);
           }}
-        >
-          {t("communityReport.maskRegion")}
-        </Button>
+          onPointerMove={(event) => {
+            const from = start.current;
+            if (!from || disabled) return;
+            const end = position(event);
+            const el = event.currentTarget;
+            setSelection([
+              (Math.min(from.x, end.x) / el.width) * 100,
+              (Math.min(from.y, end.y) / el.height) * 100,
+              (Math.abs(end.x - from.x) / el.width) * 100,
+              (Math.abs(end.y - from.y) / el.height) * 100,
+            ]);
+          }}
+          onPointerUp={(event) => {
+            if (!start.current) return;
+            const end = position(event);
+            const from = start.current;
+            start.current = null;
+            setSelection(null);
+            if (event.currentTarget.hasPointerCapture(event.pointerId))
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            mask(
+              Math.min(from.x, end.x),
+              Math.min(from.y, end.y),
+              Math.abs(end.x - from.x),
+              Math.abs(end.y - from.y),
+            );
+          }}
+          onPointerCancel={() => {
+            start.current = null;
+            setSelection(null);
+          }}
+          onLostPointerCapture={() => {
+            start.current = null;
+            setSelection(null);
+          }}
+        />
+        {selection && (
+          <div
+            className={styles.maskSelection}
+            aria-hidden="true"
+            style={{
+              left: `${selection[0]}%`,
+              top: `${selection[1]}%`,
+              width: `${selection[2]}%`,
+              height: `${selection[3]}%`,
+            }}
+          />
+        )}
+      </div>
+      <p className={styles.hint}>{t("communityReport.maskHelp")}</p>
+      <details className={styles.maskOptions}>
+        <summary>{t("communityAssist.preciseMask")}</summary>
+        <Space wrap>
+          {rect.map((value, i) => (
+            <label key={i} className={styles.coordinate}>
+              {t(`communityReport.coordinate${i}`)}
+              <InputNumber
+                size="small"
+                min={0}
+                max={100}
+                value={value}
+                disabled={disabled}
+                aria-label={t(`communityReport.coordinate${i}`)}
+                onChange={(next) =>
+                  setRect((current) =>
+                    current.map((old, j) => (j === i ? next ?? 0 : old)),
+                  )
+                }
+              />
+            </label>
+          ))}
+          <Button
+            size="small"
+            disabled={disabled}
+            onClick={() => {
+              const el = canvas.current;
+              if (el)
+                mask(
+                  (rect[0] * el.width) / 100,
+                  (rect[1] * el.height) / 100,
+                  (rect[2] * el.width) / 100,
+                  (rect[3] * el.height) / 100,
+                );
+            }}
+          >
+            {t("communityReport.maskRegion")}
+          </Button>
+        </Space>
+      </details>
+      <Space wrap>
         <Button
           size="small"
           disabled={disabled}

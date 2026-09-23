@@ -9,6 +9,7 @@ export interface Post {
   author_name?: string;
   article_type?: string;
   article_type_label?: string;
+  qa_status?: "open" | "solved" | null;
   published_at?: string;
   comment_count?: number;
   like_count?: number;
@@ -17,6 +18,7 @@ export interface Comment {
   id: string;
   author_name: string;
   content: string;
+  image_urls?: string[];
   created_at?: string;
   replies?: Comment[];
 }

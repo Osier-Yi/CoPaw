@@ -131,19 +131,13 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
 
   return (
     <Card className={`${styles.appCard} ${styles.appCardClickable}`}>
-      <CommunityFeedback
-        origin={app.installation_origin}
-        resourceName={app.name}
-      />
-      <div
-        className={styles.cardOpenButton}
-        onClick={() => onClick(app)}
-        onKeyDown={handleKeyDown}
-        role="button"
-        tabIndex={0}
-        aria-label={app.name}
-      >
-        <div className={styles.cardIcon}>
+      <div className={styles.cardTopRow}>
+        <button
+          type="button"
+          className={`${styles.cardIcon} ${styles.cardIconButton}`}
+          onClick={() => onClick(app)}
+          aria-label={`${t("appCenter.openApp", "打开应用")} ${app.name}`}
+        >
           {isImageIcon ? (
             <img
               src={displayIcon}
@@ -158,7 +152,23 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
           ) : (
             <AppWindow size={32} strokeWidth={1.75} />
           )}
-        </div>
+        </button>
+        <CommunityFeedback
+          origin={app.installation_origin}
+          installedPluginId={app.id}
+          installedVersion={app.version}
+          resourceName={app.name}
+          variant="inline"
+        />
+      </div>
+      <div
+        className={styles.cardOpenButton}
+        onClick={() => onClick(app)}
+        onKeyDown={handleKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-label={app.name}
+      >
         <div className={styles.cardBody}>
           <div className={styles.cardHeader}>
             <Text strong className={styles.cardTitle} ellipsis>

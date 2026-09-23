@@ -39,6 +39,8 @@ import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 import { getMarketAppState, type MarketAppState } from "@/utils/marketAppState";
 import type { InstalledPluginIdentity } from "@/utils/marketPluginIdentity";
 import styles from "./index.module.less";
+import { CommunityFeedback } from "@/components/CommunityFeedback";
+import { pluginMarketResource } from "@/utils/communityResources";
 
 const { Text, Paragraph } = Typography;
 
@@ -461,20 +463,27 @@ export function AppMarket({
                 const canUpdate = marketState === "update";
                 return (
                   <Card key={entry.id} className={styles.appCard}>
-                    <div className={styles.cardIcon}>
-                      {iconSrc ? (
-                        <img
-                          src={iconSrc}
-                          alt=""
-                          className={styles.marketLogo}
-                        />
-                      ) : FEATURED_APP_EMOJIS[entry.id] ? (
-                        <span className={styles.cardIconEmoji} aria-hidden>
-                          {FEATURED_APP_EMOJIS[entry.id]}
-                        </span>
-                      ) : (
-                        <AppWindow size={24} strokeWidth={1.75} />
-                      )}
+                    <div className={styles.cardTopRow}>
+                      <div className={styles.cardIcon}>
+                        {iconSrc ? (
+                          <img
+                            src={iconSrc}
+                            alt=""
+                            className={styles.marketLogo}
+                          />
+                        ) : FEATURED_APP_EMOJIS[entry.id] ? (
+                          <span className={styles.cardIconEmoji} aria-hidden>
+                            {FEATURED_APP_EMOJIS[entry.id]}
+                          </span>
+                        ) : (
+                          <AppWindow size={24} strokeWidth={1.75} />
+                        )}
+                      </div>
+                      <CommunityFeedback
+                        origin={pluginMarketResource(entry)?.origin}
+                        resourceName={entry.display_name}
+                        variant="inline"
+                      />
                     </div>
                     <div className={styles.cardBody}>
                       <div className={styles.cardHeader}>

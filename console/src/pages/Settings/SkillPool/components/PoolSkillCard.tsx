@@ -11,7 +11,10 @@ import {
   isSkillBuiltin,
 } from "@/utils/skill";
 import { SkillVisual } from "@/components/SkillVisual";
-import { CommunityFeedback } from "@/components/CommunityFeedback";
+import {
+  CommunityFeedback,
+  hasCommunityFeedback,
+} from "@/components/CommunityFeedback";
 import styles from "../index.module.less";
 
 interface PoolSkillCardProps {
@@ -101,10 +104,6 @@ export function PoolSkillCard({
       }}
       style={{ cursor: "pointer" }}
     >
-      <CommunityFeedback
-        origin={skill.installation_origin}
-        resourceName={skill.name}
-      />
       {/* Top row: Icon (left) + Status badge + Checkbox (right) */}
       <div className={styles.cardTopRow}>
         <span className={styles.fileIcon}>
@@ -115,6 +114,15 @@ export function PoolSkillCard({
           />
         </span>
         <div className={styles.cardTopRight}>
+          {hasCommunityFeedback(skill.installation_origin) && (
+            <div className={styles.cardFeedback}>
+              <CommunityFeedback
+                origin={skill.installation_origin}
+                resourceName={skill.name}
+                variant="inline"
+              />
+            </div>
+          )}
           <span
             className={`${styles.statusBadge} ${styles[`status_${syncTone}`]}`}
           >
