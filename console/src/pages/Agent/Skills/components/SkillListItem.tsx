@@ -3,12 +3,9 @@ import { useTranslation } from "react-i18next";
 import type { SkillSpec } from "../../../../api/types";
 import { isSkillBuiltin, normalizeSkillChannels } from "@/utils/skill";
 import { CommunityFeedback } from "@/components/CommunityFeedback";
-import { getSkillVisual } from "./SkillCard";
-import dayjs from "dayjs";
-import relativeTime from "dayjs/plugin/relativeTime";
+import InlineHelp from "@/components/InlineHelp";
+import { motion, useReducedMotion } from "motion/react";
 import styles from "../index.module.less";
-
-dayjs.extend(relativeTime);
 
 interface SkillListItemProps {
   skill: SkillSpec;
@@ -31,7 +28,8 @@ export function SkillListItem({
   onToggleEnabled,
   onDelete,
 }: SkillListItemProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const reducedMotion = useReducedMotion();
   const isBuiltin = isSkillBuiltin(skill.source);
   const channels = normalizeSkillChannels(skill.channels)
     .map((ch) =>
@@ -44,7 +42,14 @@ export function SkillListItem({
     .join(", ");
 
   return (
-    <div
+    <motion.div
+      layout
+      layoutId={`skill-${skill.name}`}
+      transition={{
+        layout: reducedMotion
+          ? { duration: 0 }
+          : { type: "spring", stiffness: 340, damping: 36 },
+      }}
       className={`${styles.skillListItem} ${
         isSelected ? styles.selectedListItem : ""
       }`}
@@ -55,6 +60,7 @@ export function SkillListItem({
     >
       {batchModeEnabled && (
         <Checkbox
+          aria-label={skill.name}
           checked={isSelected}
           onClick={(e) => {
             e.stopPropagation();
@@ -63,9 +69,6 @@ export function SkillListItem({
         />
       )}
       <div className={styles.listItemLeft}>
-        <span className={styles.fileIcon}>
-          {getSkillVisual(skill.name, skill.emoji)}
-        </span>
         <div className={styles.listItemInfo}>
           <div className={styles.listItemHeader}>
             <CommunityFeedback
@@ -73,7 +76,20 @@ export function SkillListItem({
               resourceName={skill.name}
               variant="inline"
             />
-            <span className={styles.skillTitle}>{skill.name}</span>
+            <button
+              type="button"
+              className={styles.skillNameButton}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (batchModeEnabled) onSelect();
+                else onClick();
+              }}
+            >
+              {skill.name}
+            </button>
+            <InlineHelp>
+              {skill.description || t("skills.noDescription")}
+            </InlineHelp>
             <span className={styles.typeBadge}>
               {isBuiltin ? t("skills.builtin") : t("skills.custom")}
             </span>
@@ -90,11 +106,11 @@ export function SkillListItem({
             <span className={styles.channelBadge}>{channels}</span>
             {skill.last_updated && (
               <span className={styles.listItemTime}>
-                {t("skills.lastUpdated")} {dayjs(skill.last_updated).fromNow()}
+                {t("skills.lastUpdated")}{" "}
+                {new Date(skill.last_updated).toLocaleDateString(i18n.language)}
               </span>
             )}
           </div>
-          <p className={styles.listItemDesc}>{skill.description || "-"}</p>
           {!!skill.tags?.length && (
             <div className={styles.listItemTags}>
               {skill.tags.map((tag) => (
@@ -109,6 +125,9 @@ export function SkillListItem({
       <div className={styles.listItemRight}>
         <span onClick={(e) => e.stopPropagation()}>
           <Switch
+            aria-label={`${t(
+              skill.enabled ? "common.disable" : "common.enable",
+            )}: ${skill.name}`}
             checked={skill.enabled}
             disabled={batchModeEnabled}
             onChange={onToggleEnabled}
@@ -125,6 +144,6 @@ export function SkillListItem({
           {t("common.delete")}
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
