@@ -1,5 +1,9 @@
+@import (reference) "../../../styles/scaledTypography.less";
+
 .skillsPage {
+  .scaled-control-typography();
   padding: 0;
+  font-size: var(--app-font-body);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -63,7 +67,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
+  font-size: var(--app-font-subtitle);
   flex: 1;
 }
 
@@ -80,7 +84,7 @@
 .breadcrumbCurrent {
   color: var(--app-text);
   font-weight: 600;
-  font-size: 20px;
+  font-size: var(--app-font-title);
 }
 
 .headerRight {
@@ -141,7 +145,7 @@
 }
 
 .noSearchResultsText {
-  font-size: 14px;
+  font-size: var(--app-font-body);
 }
 
 .skillsGrid {
@@ -175,14 +179,14 @@
 }
 
 .batchCount {
-  font-size: 13px;
+  font-size: var(--app-font-secondary);
   color: var(--app-text-secondary);
   margin-right: 4px;
 }
 
 /* ─── Skill Card ──────────────────────────────────────────────────────────── */
 .skillCard {
-  min-height: 180px;
+  min-height: max(180px, calc(180px * var(--app-font-scale)));
   height: auto;
   display: flex;
   flex-direction: column;
@@ -244,7 +248,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 13px;
+  font-size: var(--app-font-secondary);
   font-weight: 500;
   white-space: nowrap;
 
@@ -298,12 +302,12 @@
       display: flex;
       align-items: center;
       gap: 4px;
-      font-size: 11px;
+      font-size: var(--app-font-caption);
       color: var(--app-text-tertiary);
       margin-top: -2px;
 
       .calendarIcon {
-        font-size: 10px;
+        font-size: var(--app-icon-xs);
       }
     }
 
@@ -317,11 +321,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   margin-top: 8px;
 
   .channelIcon {
-    font-size: 12px;
+    font-size: var(--app-icon-xs);
     color: var(--app-text-tertiary);
     flex-shrink: 0;
   }
@@ -374,10 +378,10 @@
 
 .skillTitle {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--app-font-subtitle);
   font-weight: 600;
   color: var(--app-text);
-  line-height: 22px;
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -388,7 +392,7 @@
 .statusValue {
   padding: 2px 6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: var(--app-font-caption);
   font-weight: 500;
   flex-shrink: 0;
   white-space: nowrap;
@@ -410,7 +414,7 @@
 
 .descriptionLabel {
   margin: 0 0 4px 0;
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   color: var(--app-text-secondary);
   font-weight: normal;
 }
@@ -421,9 +425,9 @@
   box-sizing: border-box;
   border: 1px solid var(--app-border-subtle);
   padding: 2px 4px;
-  line-height: 18px;
+  line-height: 1.5;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   color: var(--app-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -443,7 +447,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   margin-bottom: 4px;
 }
 
@@ -462,12 +466,12 @@
   padding: 0 6px;
   border-radius: 3px;
   background-color: var(--app-fill-subtle);
-  font-size: 12px;
-  line-height: 20px;
+  font-size: var(--app-font-caption);
+  line-height: 1.6;
 }
 
 .calendarIcon {
-  font-size: 11px;
+  font-size: var(--app-font-caption);
   color: var(--app-text-tertiary);
 }
 
@@ -485,14 +489,14 @@
 }
 
 .metaLabel {
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   color: var(--app-text-secondary);
   min-width: 80px;
   flex-shrink: 0;
 }
 
 .channelValue {
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   color: var(--app-text);
   font-weight: 500;
   padding: 2px 8px;
@@ -501,7 +505,7 @@
 }
 
 .metaValue {
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   color: var(--app-text);
   font-weight: 500;
   padding: 2px 8px;
@@ -510,7 +514,7 @@
 
 /* Built-in / Custom tags */
 .builtinTag {
-  font-size: 11px;
+  font-size: var(--app-font-caption);
   padding: 1px 8px;
   border-radius: 4px;
   font-weight: 500;
@@ -522,7 +526,7 @@
 }
 
 .customTag {
-  font-size: 11px;
+  font-size: var(--app-font-caption);
   padding: 1px 8px;
   border-radius: 4px;
   font-weight: 500;
@@ -534,7 +538,7 @@
 }
 
 .preloadTag {
-  font-size: 11px;
+  font-size: var(--app-font-caption);
   padding: 1px 8px;
   border-radius: 4px;
   font-weight: 500;
@@ -560,7 +564,7 @@
 }
 
 .metaIcon {
-  font-size: 12px;
+  font-size: var(--app-icon-xs);
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -583,8 +587,8 @@
 .tagChip {
   display: inline-flex;
   align-items: center;
-  font-size: 12px;
-  line-height: 20px;
+  font-size: var(--app-font-caption);
+  line-height: 1.6;
   padding: 1px 8px;
   border-radius: 4px;
   font-weight: 500;
@@ -609,8 +613,9 @@
 
 .actionButton {
   flex: 1;
-  height: 34px;
-  font-size: 14px;
+  height: auto;
+  min-height: max(34px, calc(34px * var(--app-font-scale)));
+  font-size: var(--app-font-body);
   border-radius: 8px;
   background-color: var(--skills-action-bg) !important;
   color: var(--skills-action-text) !important;
@@ -624,8 +629,9 @@
 
 .deleteButton {
   flex: 1;
-  height: 34px;
-  font-size: 14px;
+  height: auto;
+  min-height: max(34px, calc(34px * var(--app-font-scale)));
+  font-size: var(--app-font-body);
   border-radius: 8px;
   background-color: var(--skills-action-bg) !important;
   color: var(--skills-danger-text) !important;
@@ -665,12 +671,12 @@
 
   .emptyStateTitle {
     margin-bottom: 6px;
-    font-size: 21px;
+    font-size: var(--app-font-title);
   }
 
   .emptyStateText {
     max-width: 720px;
-    font-size: 14px;
+    font-size: var(--app-font-body);
     line-height: 1.55;
   }
 
@@ -688,13 +694,13 @@
   border-radius: 999px;
   background: var(--app-accent-soft);
   color: var(--app-accent-text);
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   font-weight: 600;
 }
 
 .emptyStateTitle {
   margin: 0 0 10px;
-  font-size: 24px;
+  font-size: var(--app-font-title);
   font-weight: 600;
   color: var(--app-text);
 }
@@ -703,7 +709,7 @@
   max-width: 640px;
   margin: 0 auto;
   color: var(--app-text-secondary);
-  font-size: 15px;
+  font-size: var(--app-font-body);
   line-height: 1.65;
 }
 
@@ -818,11 +824,11 @@
   }
 
   .emptyStateTitle {
-    font-size: 20px;
+    font-size: var(--app-font-title);
   }
 
   .emptyStateText {
-    font-size: 14px;
+    font-size: var(--app-font-body);
   }
 }
 
@@ -862,7 +868,7 @@
 }
 
 .bulkActionButton {
-  font-size: 13px;
+  font-size: var(--app-font-secondary);
 }
 
 .bulkActions {
@@ -873,7 +879,7 @@
 
 /* ─── Card Picker (pool transfer modals) ──────────────────────────────────── */
 .pickerLabel {
-  font-size: 13px;
+  font-size: var(--app-font-secondary);
   font-weight: 500;
   color: var(--app-text-secondary);
   margin-bottom: 8px;
@@ -883,7 +889,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--app-font-secondary);
   color: var(--app-accent-text);
   cursor: pointer;
   margin-bottom: 8px;
@@ -937,21 +943,21 @@
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 18px;
-  height: 18px;
+  width: max(18px, var(--app-icon-md));
+  height: max(18px, var(--app-icon-md));
   border-radius: 50%;
   background: var(--app-accent);
   color: var(--app-text-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--app-icon-xs);
 }
 
 .pickerCardTitle {
   display: block;
   width: 100%;
-  font-size: 14px;
+  font-size: var(--app-font-body);
   font-weight: 500;
   color: var(--app-text);
   min-width: 0;
@@ -961,7 +967,7 @@
 }
 
 .pickerCardMeta {
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   color: var(--app-text-tertiary);
   margin-top: 4px;
 }
@@ -983,13 +989,13 @@
 .compactPickerCheck {
   top: 6px;
   right: 6px;
-  width: 16px;
-  height: 16px;
-  font-size: 9px;
+  width: max(16px, var(--app-icon-sm));
+  height: max(16px, var(--app-icon-sm));
+  font-size: var(--app-icon-xs);
 }
 
 .compactPickerTitle {
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   line-height: 1.25;
   width: 100%;
   padding-right: 18px;
@@ -1015,11 +1021,12 @@
 .searchInput {
   flex: 1;
   min-width: 0;
-  height: 36px;
+  height: auto;
+  min-height: max(36px, calc(36px * var(--app-font-scale)));
   padding: 0 12px;
   border: 1px solid var(--app-border);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--app-font-body);
   color: var(--app-text);
   background: var(--app-surface);
   outline: none;
@@ -1040,8 +1047,8 @@
 
   :global {
     .ant-select-selector {
-      height: 36px !important;
-      min-height: 36px;
+      height: auto !important;
+      min-height: max(36px, calc(36px * var(--app-font-scale)));
       padding: 2px 4px;
       background: var(--app-surface-raised);
       border-color: var(--app-border-strong);
@@ -1058,7 +1065,7 @@
       border-radius: 4px;
       padding: 0 8px;
       margin: 2px 4px 2px 0;
-      font-size: 12px;
+      font-size: var(--app-font-caption);
     }
 
     .ant-select-selection-placeholder {
@@ -1071,7 +1078,7 @@
   padding: 24px 16px;
   text-align: center;
   color: var(--app-text-tertiary);
-  font-size: 13px;
+  font-size: var(--app-font-secondary);
 }
 
 .filterGroup {
@@ -1085,7 +1092,7 @@
 
 .filterGroupTitle {
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   font-weight: 500;
   color: var(--app-text-tertiary);
 }
@@ -1101,7 +1108,7 @@
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   border-radius: 4px;
   background: var(--app-fill-subtle);
   color: var(--app-text-secondary);
@@ -1142,14 +1149,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--app-icon-button);
+  height: var(--app-icon-button);
   border: none;
   background: transparent;
   color: var(--app-text-tertiary);
   cursor: pointer;
   border-radius: 4px;
-  font-size: 16px;
+  font-size: var(--app-icon-md);
   transition:
     background-color 0.2s,
     color 0.2s,
@@ -1191,7 +1198,7 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 16px;
-  font-size: 14px;
+  font-size: var(--app-font-body);
   font-weight: 500;
   color: var(--app-text-secondary);
 }
@@ -1212,7 +1219,7 @@
 
 .panelCount {
   margin-left: auto;
-  font-size: 13px;
+  font-size: var(--app-font-secondary);
   font-weight: 400;
   color: var(--skills-panel-success-text);
 }
@@ -1263,18 +1270,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: var(--app-icon-lg);
   flex-shrink: 0;
 
   .skillEmoji {
     width: 28px;
     height: 28px;
-    font-size: 16px;
+    font-size: var(--app-icon-md);
   }
 }
 
 .disabledSkillGridName {
-  font-size: 13px;
+  font-size: var(--app-font-secondary);
   font-weight: 500;
   flex: 1;
   color: var(--app-text);
@@ -1284,7 +1291,7 @@
 }
 
 .disabledSkillGridAction {
-  font-size: 11px;
+  font-size: var(--app-font-caption);
   color: var(--app-accent-text);
   font-weight: 500;
   white-space: nowrap;
@@ -1362,7 +1369,7 @@
 .typeBadge {
   display: inline-flex;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   font-weight: 500;
   padding: 1px 8px;
   border-radius: 4px;
@@ -1374,7 +1381,7 @@
 .preloadListTag {
   display: inline-flex;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   font-weight: 500;
   padding: 1px 8px;
   border-radius: 4px;
@@ -1384,7 +1391,7 @@
 }
 
 .channelBadge {
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   padding: 1px 8px;
   border-radius: 4px;
   font-weight: 500;
@@ -1393,13 +1400,13 @@
 }
 
 .listItemTime {
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   color: var(--app-text-tertiary);
 }
 
 .listItemDesc {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--app-font-secondary);
   color: var(--app-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1424,6 +1431,12 @@
 .managementBanner {
   display: flex;
   align-items: center;
+
+  > svg {
+    width: var(--app-icon-md);
+    height: var(--app-icon-md);
+    flex-shrink: 0;
+  }
   gap: 10px;
   margin: 0 20px 14px;
   padding: 11px 13px;
@@ -1439,12 +1452,12 @@
 
   strong {
     color: var(--skills-warm-heading);
-    font-size: 13px;
+    font-size: var(--app-font-secondary);
   }
 
   span {
     color: var(--skills-warm-muted);
-    font-size: 11px;
+    font-size: var(--app-font-caption);
   }
 }
 
@@ -1464,7 +1477,7 @@
   p {
     margin: 5px 0 0;
     color: var(--skills-warm-muted);
-    font-size: 12px;
+    font-size: var(--app-font-caption);
   }
 }
 
@@ -1472,8 +1485,14 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+
+  > svg {
+    width: var(--app-icon-md);
+    height: var(--app-icon-md);
+    flex-shrink: 0;
+  }
   color: var(--skills-warm-heading);
-  font-size: 14px;
+  font-size: var(--app-font-body);
   font-weight: 650;
 }
 
@@ -1483,7 +1502,7 @@
   border-radius: 999px;
   color: var(--skills-warm-accent-text);
   background: var(--skills-warm-accent-bg);
-  font-size: 12px;
+  font-size: var(--app-font-caption);
   text-align: center;
 }
 
@@ -1527,7 +1546,7 @@
     margin: 11px 0 5px;
     overflow: hidden;
     color: var(--skills-warm-heading);
-    font-size: 13px;
+    font-size: var(--app-font-secondary);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -1538,7 +1557,7 @@
     margin: 0;
     overflow: hidden;
     color: var(--skills-warm-body);
-    font-size: 12px;
+    font-size: var(--app-font-caption);
     line-height: 1.55;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
@@ -1553,18 +1572,23 @@
 
 .providerSkillIcon {
   display: inline-flex;
-  width: 30px;
-  height: 30px;
+  width: max(30px, var(--app-icon-box));
+  height: max(30px, var(--app-icon-box));
   align-items: center;
   justify-content: center;
   border-radius: 9px;
   color: var(--skills-warm-accent);
   background: var(--skills-warm-accent-bg);
+
+  > svg {
+    width: var(--app-icon-md);
+    height: var(--app-icon-md);
+  }
 }
 
 .providerSkillEnabled,
 .providerSkillDisabled {
-  font-size: 11px;
+  font-size: var(--app-font-caption);
   font-weight: 600;
 }
 
@@ -1588,7 +1612,7 @@
     border-radius: 999px;
     color: var(--skills-warm-meta-text);
     background: var(--skills-warm-meta-bg);
-    font-size: 10px;
+    font-size: var(--app-font-caption);
   }
 }
 

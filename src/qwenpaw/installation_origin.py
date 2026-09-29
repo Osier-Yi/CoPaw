@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import string
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote, unquote, urlparse
@@ -19,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from .utils.io_utils import write_json_atomic
 
 _PLATFORM = "https://platform.agentscope.io"
-_PART = re.compile(r"[A-Za-z0-9_.-]+\Z")
+_PART_CHARS = frozenset(string.ascii_letters + string.digits + "_.-")
 _UUID = re.compile(
     r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\Z",
 )
@@ -34,6 +35,15 @@ class InstallationOrigin(BaseModel):
     resource_type: Literal["plugin", "app", "skill"]
     installed_version: str | None = None
     source_url: str
+
+
+def _valid_part(value: str) -> bool:
+    """Check one URL segment in linear time without regex backtracking."""
+    return (
+        bool(value)
+        and value not in {".", ".."}
+        and all(char in _PART_CHARS for char in value)
+    )
 
 
 def origin_from_platform_url(
@@ -62,14 +72,10 @@ def origin_from_platform_url(
     elif len(parts) in (3, 6):
         owner = parts[1].removeprefix("@")
         name = parts[2]
-        if not all(
-            _PART.fullmatch(p) and p not in {".", ".."} for p in (owner, name)
-        ):
+        if not all(_valid_part(p) for p in (owner, name)):
             return None
         if len(parts) == 6 and (
-            parts[3:5] != ["archive", "zip"]
-            or not _PART.fullmatch(parts[5])
-            or parts[5] in {".", ".."}
+            parts[3:5] != ["archive", "zip"] or not _valid_part(parts[5])
         ):
             return None
         resource_id = f"@{owner}/{name}"

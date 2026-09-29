@@ -315,6 +315,19 @@ class CommunityConnectionService:
         token: str | None = None,
         **kwargs,
     ) -> dict:
+        # Keep user-controlled identifiers confined to the path: base_url
+        # alone would still allow an absolute URL to override the host.
+        if (
+            not path.startswith("/api/")
+            or any(ord(char) < 32 or ord(char) == 127 for char in path)
+            or any(char in path for char in "\\?#")
+        ):
+            raise CommunityConnectionError("invalid_platform_path")
+        url = httpx.URL(
+            scheme="https",
+            host="platform.agentscope.io",
+            path=path,
+        )
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         try:
             async with httpx.AsyncClient(
@@ -325,7 +338,7 @@ class CommunityConnectionService:
             ) as client:
                 response = await client.request(
                     method,
-                    path,
+                    url,
                     headers=headers,
                     **kwargs,
                 )

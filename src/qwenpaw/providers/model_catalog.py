@@ -64,30 +64,8 @@ class CatalogDocument(BaseModel):
 
 @lru_cache(maxsize=64)
 def _read_json(path: Path, _modified: int) -> dict:
-    """Cache a catalog revision, adapting legacy catalogs in memory."""
-    payload = json.loads(path.read_text(encoding=f"utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("Invalid model catalog document")
-    version = payload.get("schema_version", CATALOG_SCHEMA_VERSION)
-    if version not in (1, CATALOG_SCHEMA_VERSION):
-        raise ValueError(f"Unsupported model catalog schema: {version}")
-    providers = payload.get("providers", {})
-    if not isinstance(providers, dict):
-        raise ValueError("Invalid model catalog providers")
-    if version == 1:
-        # Before schema 2, each provider directly contained its model list.
-        # Preserve user overrides without rewriting their on-disk catalog.
-        providers = {
-            key: {"models": entry} if isinstance(entry, list) else entry
-            for key, entry in providers.items()
-        }
-    if any(not isinstance(entry, dict) for entry in providers.values()):
-        raise ValueError("Invalid model catalog provider entry")
-    return {
-        **payload,
-        "schema_version": CATALOG_SCHEMA_VERSION,
-        "providers": providers,
-    }
+    """Cache one immutable-on-disk catalog revision."""
+    return json.loads(path.read_text(encoding=f"utf-8"))
 
 
 def _read_document(

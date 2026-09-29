@@ -8,7 +8,7 @@
   padding: 4px 10px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--app-font-body);
   font-weight: 500;
   transition:
     color 150ms ease,
@@ -465,14 +465,14 @@
   :global(.ant-select-selection-placeholder) {
     padding-right: 12px !important;
     color: var(--ms-text) !important;
-    font-size: 12px;
+    font-size: var(--app-font-caption);
     line-height: 34px !important;
   }
 
   :global(.ant-select-selection-search-input) {
     height: 34px !important;
     color: var(--ms-text);
-    font-size: 12px;
+    font-size: var(--app-font-caption);
   }
 
   :global(.ant-select-arrow) {
@@ -1604,6 +1604,13 @@
   display: inline-flex;
   min-width: 0;
   max-width: 100%;
+  flex: 0 1 auto;
+  overflow: hidden;
+
+  > * {
+    min-width: 0;
+    max-width: 100%;
+  }
 }
 .pickerOverlay {
   max-width: calc(100vw - 24px);
@@ -1640,6 +1647,76 @@
   margin-left: auto;
   min-width: 0;
   flex-shrink: 1;
+}
+
+.agentModelSettings[data-surface="settings"] {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--app-border-subtle);
+
+  .agentSettingsBody {
+    gap: 6px;
+    padding: 0;
+  }
+
+  .agentSettingsBody > section {
+    max-width: none;
+    margin-bottom: 6px;
+    padding: 12px;
+    border: 1px solid var(--app-border-subtle);
+    border-radius: 12px;
+    background: var(--app-surface-subtle);
+  }
+
+  .settingLine {
+    min-height: 48px;
+    padding: 4px 10px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    transition:
+      border-color 150ms ease,
+      background-color 150ms ease;
+  }
+
+  .settingLine:hover,
+  .settingLine:focus-within {
+    border-color: var(--app-accent-border);
+    background: var(--app-accent-soft);
+  }
+
+  .modelChoiceButton:hover,
+  .modelChoiceButton:focus-visible {
+    background: transparent;
+    color: var(--app-accent-text);
+  }
+
+  .saveAgentSettings {
+    min-width: 112px;
+    min-height: 36px;
+    margin-top: 8px;
+    border-radius: 9px;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .agentModelSettings[data-surface="settings"] {
+    .settingLine {
+      align-items: flex-start;
+      flex-wrap: wrap;
+      padding-block: 10px;
+    }
+
+    .settingLine > span:first-child {
+      width: 100%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentModelSettings[data-surface="settings"] .settingLine {
+    transition: none;
+  }
 }
 
 .embedded .manageButton {
