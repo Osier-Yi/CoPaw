@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Button, Select, Space } from "antd";
+import { Alert, Button, Select, Space, Segmented } from "antd";
 import { useTranslation } from "react-i18next";
 import type { ReportResource } from "@/api/modules/communityReport";
 import { fetchMarketPlugins } from "@/api/modules/pluginMarket";
@@ -12,6 +12,8 @@ import {
 import styles from "./index.module.less";
 
 type Source = "plugins" | "skills";
+const resourceKind = (item: ReportResource) =>
+  item.origin.resource_type === "skill" ? "skill" : "plugin";
 interface Results {
   items: ReportResource[];
   page: number;
@@ -40,6 +42,7 @@ export function ResourcePicker({
   onChange: (resources: ReportResource[]) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const [kind, setKind] = useState("plugin");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Record<Source, Results>>({
     plugins: emptyResults(),
@@ -134,6 +137,7 @@ export function ResourcePicker({
     options: items.flatMap((item) => {
       const key = identity(item.origin);
       if (
+        resourceKind(item) !== kind ||
         seen.has(key) ||
         (filter &&
           !`${item.name} ${item.origin.resource_id} ${item.local_id || ""}`
@@ -163,6 +167,30 @@ export function ResourcePicker({
       <span className={styles.resourcePickerHint}>
         {t("communityAssist.resourceSearchHint")}
       </span>
+      <Segmented
+        value={kind}
+        disabled={disabled}
+        aria-label={t("communityAssist.resourceKind")}
+        options={[
+          {
+            value: "plugin",
+            label: `Plugin · ${
+              selected.filter((item) => resourceKind(item) === "plugin").length
+            }/3`,
+          },
+          {
+            value: "skill",
+            label: `Skill · ${
+              selected.filter((item) => item.origin.resource_type === "skill")
+                .length
+            }/3`,
+          },
+        ]}
+        onChange={(value) => {
+          setKind(String(value));
+          setQuery("");
+        }}
+      />
       <Select
         mode="multiple"
         showSearch
@@ -178,7 +206,9 @@ export function ResourcePicker({
         autoClearSearchValue={false}
         onSearch={setQuery}
         loading={results.plugins.loading || results.skills.loading}
-        value={selected.map((item) => identity(item.origin))}
+        value={selected
+          .filter((item) => resourceKind(item) === kind)
+          .map((item) => identity(item.origin))}
         options={groups}
         notFoundContent={t(
           results.plugins.loading || results.skills.loading
@@ -186,13 +216,20 @@ export function ResourcePicker({
             : "communityAssist.noResourceResults",
         )}
         onChange={(keys: string[]) =>
-          onChange(keys.flatMap((key) => all.get(key) || []))
+          onChange([
+            ...selected.filter((item) => resourceKind(item) !== kind),
+            ...keys.flatMap((key) => all.get(key) || []),
+          ])
         }
       />
       <Space wrap size="small">
         {(["plugins", "skills"] as Source[]).map((source) => {
           const state = results[source];
-          if (!state.more && !state.failed) return null;
+          if (
+            source !== (kind === "plugin" ? "plugins" : "skills") ||
+            (!state.more && !state.failed)
+          )
+            return null;
           const label = t(
             source === "plugins"
               ? "communityAssist.platformPlugins"

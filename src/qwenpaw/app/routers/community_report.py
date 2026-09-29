@@ -24,6 +24,12 @@ async def _wait_for_disconnect(request: Request) -> None:
 
 @router.post("/generate")
 async def generate_report(body: CommunityReportRequest, request: Request):
+    if not body.agent_id:
+        body = body.model_copy(
+            update={
+                "agent_id": getattr(request, "headers", {}).get("X-Agent-Id"),
+            },
+        )
     generation = asyncio.create_task(generate_community_report(body))
     disconnect = asyncio.create_task(_wait_for_disconnect(request))
     try:
@@ -53,6 +59,7 @@ async def generate_report(body: CommunityReportRequest, request: Request):
 
 async def _resource_catalog(
     request: Request,
+    include_resources: bool = True,
 ) -> tuple[list[dict], str, list[str]]:
     from pathlib import Path
 
@@ -67,6 +74,8 @@ async def _resource_catalog(
     ref = config.agents.profiles.get(agent_id or "default")
     if not ref:
         raise HTTPException(status_code=404, detail="agent_not_found")
+    if not include_resources:
+        return [], ref.id, []
     if getattr(request.app.state, "plugin_loader", None) is None:
         plugins = await run_sync_io(_list_plugins_from_disk)
     else:
@@ -95,13 +104,14 @@ async def collect_diagnostics(body: DiagnosticsRequest, request: Request):
     from ..inbox_store import query_events
     from ...utils.io_utils import run_sync_io
 
-    catalog, agent_id, _ = await _resource_catalog(request)
+    catalog, agent_id, _ = await _resource_catalog(
+        request,
+        include_resources=bool(body.origins),
+    )
     wanted = {resource_key(origin.model_dump()) for origin in body.origins}
     resources = [
         item for item in catalog if resource_key(item["origin"]) in wanted
     ]
-    if not resources:
-        raise HTTPException(status_code=404, detail="resource_not_installed")
     environment, (logs, truncated) = await asyncio.gather(
         run_sync_io(environment_evidence, resources),
         run_sync_io(matching_logs, resources, body.minutes),
@@ -110,7 +120,7 @@ async def collect_diagnostics(body: DiagnosticsRequest, request: Request):
     warnings = []
     if logs:
         evidence.append({"id": "logs", "content": logs})
-    else:
+    elif resources:
         warnings.append("no_matching_logs")
     if truncated:
         warnings.append("logs_truncated")

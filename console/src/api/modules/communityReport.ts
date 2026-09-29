@@ -2,6 +2,8 @@ import type { InstallationOrigin } from "../types/community";
 import { request } from "../request";
 
 export interface CommunityReportInput {
+  agent_id?: string;
+  history?: { role: "user" | "assistant"; content: string }[];
   article_type?: string;
   resource_context?: string;
   resource_name: string;

@@ -135,7 +135,10 @@
   grid-template-columns: minmax(0, 1fr);
 }
 .composerLayout[data-assisting="true"] {
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 12px minmax(
+      300px,
+      var(--assist-width, 35%)
+    );
 }
 .writingPane {
   display: flex;
@@ -271,7 +274,6 @@
   }
 }
 .assistancePane {
-  border-left: 1px solid var(--app-border);
   background: var(--app-surface-subtle);
   min-width: 0;
 }
@@ -631,5 +633,548 @@
   }
   .preview h2 {
     font-size: 19px;
+  }
+}
+
+.sectionHeading {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text-secondary);
+}
+.consentAction {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface);
+  :global(:is(.ant-checkbox-wrapper, .qwenpaw-checkbox-wrapper)) {
+    font-size: 12px;
+    line-height: 1.7;
+    font-weight: 400;
+    align-items: flex-start;
+  }
+}
+.resizeHandle {
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--app-surface-subtle);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  &::after {
+    content: "";
+    width: 3px;
+    height: 40px;
+    border-radius: 3px;
+    background: var(--app-border-strong);
+  }
+  &:hover::after,
+  &:focus-visible::after {
+    background: var(--app-accent);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: -2px;
+  }
+}
+@media (max-width: 900px) {
+  .resizeHandle {
+    display: none;
+  }
+}
+
+.writingConversation {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  padding: 20px;
+  h1,
+  h2,
+  h3 {
+    font-size: 18px;
+    line-height: 1.5;
+    margin: 8px 0;
+  }
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-wrap: anywhere;
+  pre {
+    overflow-x: auto;
+  }
+  img {
+    max-width: 100%;
+  }
+}
+.userTurn,
+.assistantTurn {
+  flex-shrink: 0;
+  min-width: 0;
+  border-radius: 14px;
+  line-height: 1.75;
+}
+.userTurn {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 12px 16px;
+  background: var(--app-fill-subtle);
+  border: 1px solid var(--app-border-subtle);
+  border-bottom-right-radius: 4px;
+  .turnHeader {
+    padding: 0 0 8px;
+  }
+  .turnContent {
+    padding: 0;
+  }
+  .turnAvatar {
+    background: var(--app-surface);
+    color: var(--app-text-secondary);
+  }
+}
+.assistantTurn {
+  align-self: stretch;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  .turnHeader {
+    position: sticky;
+    top: -20px;
+    z-index: 1;
+    border-bottom: 1px solid var(--app-border-subtle);
+    border-radius: 14px 14px 0 0;
+    background: var(--app-surface);
+  }
+}
+.turnHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.turnIdentity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--app-text);
+}
+.turnAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--app-accent-text);
+  background: var(--app-accent-faint);
+}
+.applyDraftButton {
+  min-height: 36px;
+  font-weight: 600;
+  white-space: normal;
+  height: auto;
+  &:not(:disabled):not(:global(.ant-btn-disabled)) {
+    color: var(--app-accent-text);
+    background: var(--app-accent-soft);
+    border-color: var(--app-accent-border);
+    box-shadow: none;
+    &:hover,
+    &:active {
+      color: var(--app-accent-text);
+      background: var(--app-accent-soft-hover);
+      border-color: var(--app-accent-border);
+    }
+  }
+}
+.turnContent {
+  padding: 16px;
+  margin: 0;
+  > :first-child {
+    margin-top: 0;
+  }
+  > :last-child {
+    margin-bottom: 0;
+  }
+}
+
+// The route-based editor fills the extension workspace without a modal overlay.
+.composerPage {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+
+  .composer {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    padding: 0;
+  }
+  .pageHeader {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--app-border);
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+  }
+  .pageFooter {
+    flex: none;
+    padding: 16px 28px;
+    border-top: 1px solid var(--app-border);
+    background: var(--app-surface);
+  }
+  @media (min-width: 901px) {
+    .composerLayout {
+      height: 100%;
+    }
+    .composerLayout > .writingPane,
+    .composerLayout > .assistancePane {
+      min-height: 0;
+      max-height: none;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+  }
+  @media (max-width: 600px) {
+    .pageHeader {
+      padding: 10px 12px;
+      gap: 12px;
+    }
+    .pageHeader h1 {
+      font-size: 16px;
+    }
+    .pageFooter {
+      padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+    }
+  }
+}
+
+.draftLibrary {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px;
+  h1 {
+    font-size: 24px;
+    margin: 20px 0 8px;
+  }
+  > .hint {
+    margin-bottom: 24px;
+  }
+}
+.draftCard {
+  padding: 20px;
+  margin: 16px 0;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-surface);
+  h2 {
+    font-size: 17px;
+    margin: 12px 0 8px;
+    overflow-wrap: anywhere;
+  }
+  p {
+    color: var(--app-text-secondary);
+    overflow-wrap: anywhere;
+  }
+}
+@media (max-width: 600px) {
+  .draftLibrary {
+    padding: 16px;
+  }
+  .footerActions {
+    flex-wrap: wrap;
+  }
+  .footerActions .hint {
+    flex-basis: 100%;
+  }
+}
+
+// A stable chat frame: only the active conversation or materials workspace scrolls.
+.composerLayout[data-assisting="true"] {
+  height: calc(100dvh - 238px);
+  min-height: 0;
+}
+.composerPage .composerLayout {
+  height: 100%;
+}
+.composerPage .composerLayout > .assistancePane,
+.composerLayout[data-assisting="true"] > .assistancePane {
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+}
+.assistance {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+  background: var(--app-surface);
+}
+.assistantHeader {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface-subtle);
+  .assistHeading {
+    font-size: 14px;
+  }
+}
+.assistantSettings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(320px, calc(100vw - 64px));
+  padding: 8px 0;
+}
+.writingConversation[hidden],
+.materialWorkspace[hidden] {
+  display: none;
+}
+.writingConversation {
+  overscroll-behavior: contain;
+}
+.conversationEmpty {
+  margin: auto;
+  max-width: 320px;
+  padding: 20px 8px;
+  text-align: center;
+  line-height: 1.8;
+  svg {
+    color: var(--app-accent-text);
+    margin-bottom: 12px;
+  }
+  strong {
+    display: block;
+    font-size: 16px;
+  }
+  p {
+    font-size: 13px;
+    color: var(--app-text-secondary);
+    margin: 8px 0 0;
+  }
+}
+.materialWorkspace {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  .materialHeader {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .materialHeader strong {
+    font-size: 14px;
+  }
+  .imageMaterials {
+    margin-top: 20px;
+  }
+}
+.chatComposer {
+  flex: none;
+  max-height: 55%;
+  overflow-y: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface);
+  .generateActions {
+    gap: 8px;
+  }
+  .field {
+    gap: 8px;
+  }
+  .field > label {
+    font-size: 12px;
+    color: var(--app-text-secondary);
+  }
+  :global(.ant-checkbox-wrapper) {
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  :global(textarea) {
+    font-size: 14px;
+  }
+}
+.chatToolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  > :first-child {
+    margin-right: auto;
+  }
+}
+.writingPane {
+  background: var(--app-surface-subtle);
+  gap: 20px;
+  padding: 20px;
+}
+.writingSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-surface);
+  > * {
+    flex-shrink: 0;
+  }
+  .sectionHeading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    margin: 0;
+    color: var(--app-text);
+  }
+  .resourceRow {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+}
+.sectionNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--app-accent-text);
+  background: var(--app-accent-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 900px) {
+  .composer {
+    display: flex;
+    flex-direction: column;
+  }
+  .mobilePaneSwitch {
+    flex: none;
+    position: static;
+  }
+  .composerLayout,
+  .composerPage .composerLayout {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+    overflow: hidden;
+  }
+  .composerLayout > .writingPane {
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .composerLayout[data-assisting="true"] {
+    height: 100%;
+  }
+  .composerLayout > .assistancePane {
+    height: 100%;
+  }
+}
+@media (max-width: 600px) {
+  .writingPane {
+    padding: 12px;
+    gap: 12px;
+  }
+  .writingSection {
+    padding: 14px;
+    gap: 14px;
+  }
+  .assistantHeader {
+    padding: 10px 12px;
+  }
+  .writingConversation {
+    padding: 16px;
+  }
+  .chatComposer {
+    padding: 10px 12px;
+  }
+  .chatToolbar :global(.ant-btn) {
+    min-height: 36px;
+  }
+  .applyDraftButton {
+    min-height: 44px;
+  }
+  .assistantTurn .turnHeader {
+    top: -16px;
+  }
+}
+
+.resourceSummary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--app-border-subtle);
+  border-radius: 10px;
+  background: var(--app-surface-subtle);
+  > div {
+    flex: 1;
+    min-width: 160px;
+  }
+  strong {
+    font-size: 14px;
+    color: var(--app-text);
+  }
+  p {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--app-text-secondary);
+    line-height: 1.6;
+  }
+}
+.resourceSummaryIcon {
+  display: inline-flex;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--app-surface);
+  color: var(--app-accent-text);
+}
+.addResourcesButton {
+  min-height: 36px;
+  font-weight: 500;
+  &:not(:disabled) {
+    color: var(--app-accent-text);
+    border-color: var(--app-accent-border);
+    background: var(--app-surface);
+    &:hover {
+      background: var(--app-accent-soft);
+    }
+  }
+}
+@media (max-width: 600px) {
+  .resourceSummary {
+    padding: 12px;
+  }
+  .addResourcesButton {
+    width: 100%;
+    min-height: 44px;
   }
 }

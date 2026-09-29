@@ -4,7 +4,6 @@ import {
   Button,
   Empty,
   Input,
-  Image,
   Pagination,
   Segmented,
   Select,
@@ -12,20 +11,21 @@ import {
 } from "antd";
 import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import DOMPurify from "dompurify";
-import ReactMarkdown from "react-markdown";
-import { CircleCheck } from "lucide-react";
-import {
-  communityConnectionApi,
-  type CommunityConnectionStatus,
-} from "@/api/modules/community";
+import { Avatar } from "antd";
+import { MessageSquare, ThumbsUp, FilePenLine } from "lucide-react";
 import { MarketplaceHeader } from "../components/MarketplaceHeader";
-import { communityPostsApi, type Post, type Comment, type Page } from "./api";
-import { isCustomEmoji, markdownWithCustomEmoji } from "./customEmoji";
+import { communityPostsApi, type Post, type Page } from "./api";
+import { PostDetail, QuestionStatus } from "./PostDetail";
+import { mediaUrl } from "./media";
+export { PostBody } from "./PostBody";
 import { COMMUNITY_FILTER_TYPES, COMMUNITY_SORTS } from "@/constants/community";
-import { openExternalLink } from "@/utils/openExternalLink";
 import { communityErrorKey } from "@/utils/communityError";
 import styles from "./index.module.less";
+import { communityConnectionApi } from "@/api/modules/community";
+import {
+  latestWritingSession,
+  type WritingSession,
+} from "@/pages/CommunityFeedback/writingSession";
 
 const PostComposer = lazy(() =>
   import("@/pages/CommunityFeedback/PostComposer").then((module) => ({
@@ -33,308 +33,58 @@ const PostComposer = lazy(() =>
   })),
 );
 
-function QuestionStatus({ post }: { post: Post }) {
-  const { t } = useTranslation();
-  if (post.article_type !== "question" || post.qa_status !== "solved")
-    return null;
-  return (
-    <span className={styles.solvedStatus}>
-      <CircleCheck size={14} aria-hidden="true" />
-      {t("communityPage.solved")}
-    </span>
-  );
-}
-
-function CommunityAnchor({
-  href,
-  children,
-}: {
-  href?: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      onClick={(event) => {
-        event.preventDefault();
-        if (href)
-          openExternalLink(
-            new URL(href, "https://platform.agentscope.io").href,
-          );
-      }}
-    >
-      {children}
-    </a>
-  );
-}
-
-export function PostBody({ post }: { post: Post }) {
-  const html = DOMPurify.sanitize(post.body_html || "", {
-    USE_PROFILES: { html: true },
-    FORBID_TAGS: [
-      "style",
-      "form",
-      "input",
-      "button",
-      "iframe",
-      "video",
-      "audio",
-    ],
-    FORBID_ATTR: ["style", "id", "name", "srcset"],
-  });
-  return html ? (
-    <div
-      className={styles.body}
-      dangerouslySetInnerHTML={{ __html: html }}
-      onClick={(event) => {
-        const link = (event.target as Element).closest("a");
-        const href = link?.getAttribute("href");
-        if (!href || href.startsWith("#")) return;
-        event.preventDefault();
-        openExternalLink(new URL(href, "https://platform.agentscope.io").href);
-      }}
-    />
-  ) : (
-    <div className={styles.body}>
-      <ReactMarkdown components={{ a: CommunityAnchor }}>
-        {post.body_text || post.summary || ""}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-function CommentThread({
-  comment,
-  onReply,
-}: {
-  comment: Comment;
-  onReply: (comment: Comment) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className={styles.comment}>
-      <div className={styles.meta}>
-        {comment.author_name} · {comment.created_at?.replace("T", " ")}
-      </div>
-      <ReactMarkdown
-        components={{
-          a: CommunityAnchor,
-          img: ({ src, alt }) => (
-            <img
-              src={src}
-              alt={alt || ""}
-              className={isCustomEmoji(src) ? styles.customEmoji : undefined}
-              loading="lazy"
-              referrerPolicy="no-referrer"
-            />
-          ),
-        }}
-      >
-        {markdownWithCustomEmoji(comment.content)}
-      </ReactMarkdown>
-      {!!comment.image_urls?.length && (
-        <div className={styles.commentImages}>
-          <Image.PreviewGroup>
-            {Array.from(new Set(comment.image_urls))
-              .filter((url) => /^https?:\/\//i.test(url))
-              .map((url, index) => (
-                <Image
-                  key={url}
-                  src={url}
-                  alt={t("communityPage.commentImage", { number: index + 1 })}
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                />
-              ))}
-          </Image.PreviewGroup>
-        </div>
-      )}
-      <Button type="text" size="small" onClick={() => onReply(comment)}>
-        {t("communityPage.reply")}
-      </Button>
-      {comment.replies?.map((reply) => (
-        <CommentThread key={reply.id} comment={reply} onReply={onReply} />
-      ))}
-    </div>
-  );
-}
-
-function PostDetail({ id }: { id: string }) {
-  const { t } = useTranslation();
-  const [params] = useSearchParams();
-  const backParams = new URLSearchParams(params);
-  backParams.delete("post");
-  const [post, setPost] = useState<Post>();
-  const [comments, setComments] = useState<Page<Comment>>({
-    items: [],
-    total: 0,
-  });
-  const [page, setPage] = useState(1);
-  const [reload, setReload] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
-  const [sendError, setSendError] = useState<string>();
-  const [sending, setSending] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [reply, setReply] = useState<Comment>();
-  const [connection, setConnection] = useState<CommunityConnectionStatus>();
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(undefined);
-    Promise.all([
-      communityPostsApi.detail(id, controller.signal),
-      communityPostsApi.comments(id, page, controller.signal),
-      communityConnectionApi.status(controller.signal).catch(() => undefined),
-    ])
-      .then(([detail, replies, status]) => {
-        if (!controller.signal.aborted) {
-          setPost(detail);
-          setComments(replies);
-          setConnection(status);
-        }
-      })
-      .catch((err) => {
-        if (!controller.signal.aborted) setError(communityErrorKey(err));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [id, page, reload]);
-  const send = async () => {
-    if (!draft.trim() || !connection?.account || sending) return;
-    setSending(true);
-    setSendError(undefined);
-    try {
-      await communityPostsApi.comment(
-        id,
-        draft.trim(),
-        connection.account.id,
-        reply?.id,
-      );
-      setDraft("");
-      setReply(undefined);
-      setPage(1);
-      setReload((value) => value + 1);
-    } catch (err) {
-      setSendError(communityErrorKey(err));
-    } finally {
-      setSending(false);
-    }
-  };
-  return (
-    <>
-      <Link to={`/market?${backParams}`}>← {t("communityPage.back")}</Link>
-      {error && (
-        <Alert
-          type="error"
-          message={t(error)}
-          description={t("communityPage.loadErrorHelp")}
-          action={
-            <Button onClick={() => setReload((v) => v + 1)}>
-              {t("communityPage.retry")}
-            </Button>
-          }
-        />
-      )}
-      <Spin spinning={loading}>
-        {post && (
-          <article>
-            <div className={styles.postTitle}>
-              <h1>{post.title}</h1>
-              <QuestionStatus post={post} />
-            </div>
-            <div className={styles.meta}>
-              {post.author_name} · {post.published_at?.replace("T", " ")} ·{" "}
-              {post.article_type_label}
-            </div>
-            <PostBody post={post} />
-            <section
-              className={styles.discussion}
-              aria-label={t("communityPage.comments")}
-            >
-              <h2>
-                {t("communityPage.comments")} ({comments.total})
-              </h2>
-              {connection?.status === "connected" ? (
-                <div className={styles.composer}>
-                  {reply && (
-                    <div>
-                      {t("communityPage.replyTo", { name: reply.author_name })}{" "}
-                      <Button type="text" onClick={() => setReply(undefined)}>
-                        {t("communityPage.cancelReply")}
-                      </Button>
-                    </div>
-                  )}
-                  <label htmlFor="community-comment">
-                    {t("communityPage.writeComment")}
-                  </label>
-                  <Input.TextArea
-                    id="community-comment"
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    autoSize={{ minRows: 3, maxRows: 12 }}
-                    maxLength={65536}
-                    disabled={sending}
-                  />
-                  {sendError && (
-                    <Alert
-                      type="error"
-                      message={t("communityPage.sendError")}
-                      description={t(sendError)}
-                    />
-                  )}
-                  <Button
-                    type="primary"
-                    loading={sending}
-                    disabled={!draft.trim()}
-                    onClick={() => void send()}
-                  >
-                    {t("communityPage.send")}
-                  </Button>
-                </div>
-              ) : (
-                <Link to="/settings/community">
-                  {t("communityPage.connect")}
-                </Link>
-              )}
-              {!comments.items.length && (
-                <Empty
-                  description={t("communityPage.noComments")}
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                />
-              )}
-              {comments.items.map((comment) => (
-                <CommentThread
-                  key={comment.id}
-                  comment={comment}
-                  onReply={setReply}
-                />
-              ))}
-              {comments.total > 20 && (
-                <Pagination
-                  current={page}
-                  pageSize={20}
-                  total={comments.total}
-                  showSizeChanger={false}
-                  onChange={setPage}
-                />
-              )}
-            </section>
-          </article>
-        )}
-      </Spin>
-    </>
-  );
-}
+const DraftLibrary = lazy(() =>
+  import("@/pages/CommunityFeedback/DraftLibrary").then((module) => ({
+    default: module.DraftLibrary,
+  })),
+);
 
 export default function CommunityPage() {
   const { t } = useTranslation();
-  const [editor, setEditor] = useState<"question" | "discussion">();
-  const openEditor = (path: "write" | "ask") =>
-    setEditor(path === "ask" ? "question" : "discussion");
   const [params, setParams] = useSearchParams();
+  const showingDrafts = params.get("drafts") === "1";
+  const requestedEditor = params.get("compose");
+  const editor =
+    requestedEditor === "question" || requestedEditor === "discussion"
+      ? requestedEditor
+      : undefined;
+  const [resumable, setResumable] = useState<WritingSession>();
+  useEffect(() => {
+    let active = true;
+    if (!editor) {
+      void communityConnectionApi
+        .status()
+        .then((status) => {
+          if (active)
+            setResumable(
+              status.status === "connected" && status.account
+                ? latestWritingSession(status.account.id)
+                : undefined,
+            );
+        })
+        .catch(() => {
+          if (active) setResumable(undefined);
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [editor, showingDrafts]);
+  const openEditor = (path: "write" | "ask") => {
+    const next = new URLSearchParams(params);
+    next.delete("post");
+    next.delete("drafts");
+    next.delete("draft");
+    next.set("compose", path === "ask" ? "question" : "discussion");
+    setParams(next);
+  };
+  const closeEditor = () => {
+    const next = new URLSearchParams(params);
+    next.delete("compose");
+    next.delete("draft");
+    next.delete("drafts");
+    setParams(next, { replace: true });
+  };
   const id = params.get("post");
   const page = Math.max(1, Number(params.get("page")) || 1);
   const keyword = params.get("keyword") || "";
@@ -348,7 +98,7 @@ export default function CommunityPage() {
   const [error, setError] = useState<string>();
   const [reload, setReload] = useState(0);
   useEffect(() => {
-    if (id) return;
+    if (id || editor || showingDrafts) return;
     const controller = new AbortController();
     setLoading(true);
     setError(undefined);
@@ -364,7 +114,7 @@ export default function CommunityPage() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [id, page, keyword, type, sort, reload]);
+  }, [id, editor, showingDrafts, page, keyword, type, sort, reload]);
   const update = (values: Record<string, string>) =>
     setParams({ tab: "community", keyword, type, sort, page: "1", ...values });
   const items = [
@@ -377,134 +127,203 @@ export default function CommunityPage() {
   return (
     <div className={styles.page}>
       <MarketplaceHeader activeSection="community" />
-      {editor && (
+      {editor ? (
         <Suspense fallback={<Spin />}>
           <PostComposer
+            key={`${editor}:${params.get("draft") || "new"}`}
+            draftId={params.get("draft") || undefined}
+            presentation="page"
             initialType={editor}
-            onClose={() => setEditor(undefined)}
+            onClose={closeEditor}
           />
         </Suspense>
-      )}
-      <div className={styles.scroll}>
-        <div className={styles.content}>
-          {id ? (
-            <PostDetail key={id} id={id} />
-          ) : (
-            <>
-              <div className={styles.heading}>
-                <div>
-                  <h1>{t("communityFeedback.community")}</h1>
-                  <p className={styles.meta}>
-                    {t("communityPage.description")}
-                  </p>
-                </div>
-                <div className={styles.headingActions}>
-                  <Link to="/settings/community">
-                    {t("communityPage.account")}
-                  </Link>
-                  <Button onClick={() => openEditor("ask")}>
-                    {t("communityPage.askOnPlatform")}
-                  </Button>
-                  <Button type="primary" onClick={() => openEditor("write")}>
-                    {t("communityPage.writeOnPlatform")}
-                  </Button>
-                </div>
-              </div>
-              <p className={`${styles.meta} ${styles.editorHelp}`}>
-                {t("communityPage.editorHelp")}
-              </p>
-              <div className={styles.toolbar}>
-                <Segmented
-                  aria-label={t("communityPage.sort")}
-                  value={sort}
-                  options={COMMUNITY_SORTS.map((value) => ({
-                    value,
-                    label: t(`communityPage.${value}`),
-                  }))}
-                  onChange={(value) => update({ sort: String(value) })}
-                />
-                <Input.Search
-                  key={keyword}
-                  defaultValue={keyword}
-                  placeholder={t("communityPage.search")}
-                  aria-label={t("communityPage.search")}
-                  onSearch={(value) => update({ keyword: value })}
-                  allowClear
-                />
-                <Select
-                  aria-label={t("communityPage.type")}
-                  value={type}
-                  onChange={(value) => update({ type: value })}
-                  options={COMMUNITY_FILTER_TYPES.map((value) => ({
-                    value,
-                    label: t(`communityPage.${value}`),
-                  }))}
-                />
-                <Button onClick={() => setReload((value) => value + 1)}>
-                  {t("communityPage.refresh")}
-                </Button>
-              </div>
-              {error && (
-                <Alert
-                  type="error"
-                  message={t(error)}
-                  description={t("communityPage.loadErrorHelp")}
-                  action={
-                    <Button onClick={() => setReload((v) => v + 1)}>
-                      {t("communityPage.retry")}
-                    </Button>
-                  }
-                />
-              )}
-              <Spin spinning={loading}>
-                <div className={styles.feed}>
-                  {!loading && !error && !items.length && (
-                    <Empty description={t("communityPage.empty")} />
-                  )}
-                  {items.map((post) => (
-                    <Link
-                      className={styles.post}
-                      key={post.id}
-                      to={`/market?tab=community&post=${encodeURIComponent(
-                        post.id,
-                      )}&${new URLSearchParams({
-                        sort,
-                        type,
-                        keyword,
-                        page: String(page),
-                      })}`}
-                    >
-                      <div className={styles.meta}>
-                        {post.author_name} · {post.article_type_label}
-                      </div>
-                      <div className={styles.postTitle}>
-                        <h2>{post.title}</h2>
-                        <QuestionStatus post={post} />
-                      </div>
-                      <p>{post.summary}</p>
-                      <div className={styles.meta}>
-                        {post.published_at?.slice(0, 10)} ·{" "}
-                        {t("communityPage.commentCount", {
-                          count: post.comment_count || 0,
-                        })}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </Spin>
-              {data.total > 20 && (
-                <Pagination
-                  current={page}
-                  pageSize={20}
-                  total={data.total}
-                  showSizeChanger={false}
-                  onChange={(value) => update({ page: String(value) })}
-                />
-              )}
-            </>
-          )}
+      ) : showingDrafts ? (
+        <div className={styles.scroll}>
+          <Suspense fallback={<Spin />}>
+            <DraftLibrary
+              onBack={closeEditor}
+              onOpen={(draft) => {
+                const next = new URLSearchParams(params);
+                next.delete("drafts");
+                next.set(
+                  "compose",
+                  draft.type === "question" ? "question" : "discussion",
+                );
+                next.set("draft", draft.id);
+                setParams(next);
+              }}
+            />
+          </Suspense>
         </div>
-      </div>
+      ) : (
+        <div className={styles.scroll}>
+          <div className={styles.content}>
+            {id ? (
+              <PostDetail key={id} id={id} />
+            ) : (
+              <>
+                <div className={styles.heading}>
+                  <div>
+                    <h1>{t("communityFeedback.community")}</h1>
+                    <p className={styles.meta}>
+                      {t("communityPage.description")}
+                    </p>
+                  </div>
+                  <div className={styles.headingActions}>
+                    <Link to="/settings/community">
+                      {t("communityPage.account")}
+                    </Link>
+                    <Button
+                      onClick={() => {
+                        const next = new URLSearchParams(params);
+                        next.set("drafts", "1");
+                        setParams(next);
+                      }}
+                    >
+                      {t("communityDrafts.title")}
+                    </Button>
+                    {resumable && (
+                      <Button
+                        icon={<FilePenLine size={16} />}
+                        onClick={() => {
+                          const next = new URLSearchParams(params);
+                          next.delete("post");
+                          next.delete("drafts");
+                          next.delete("draft");
+                          next.set("compose", resumable.initialType);
+                          // Reopen the original in-window session, including unsaved edits.
+                          if (resumable.id && resumable.draftId)
+                            next.set("draft", resumable.draftId);
+                          setParams(next);
+                        }}
+                      >
+                        {t("communityAssist.resumeWriting")}
+                      </Button>
+                    )}
+                    <Button onClick={() => openEditor("ask")}>
+                      {t("communityPage.askOnPlatform")}
+                    </Button>
+                    <Button type="primary" onClick={() => openEditor("write")}>
+                      {t("communityPage.writeOnPlatform")}
+                    </Button>
+                  </div>
+                </div>
+                <p className={`${styles.meta} ${styles.editorHelp}`}>
+                  {t("communityPage.editorHelp")}
+                </p>
+                <div className={styles.toolbar}>
+                  <Segmented
+                    aria-label={t("communityPage.sort")}
+                    value={sort}
+                    options={COMMUNITY_SORTS.map((value) => ({
+                      value,
+                      label: t(`communityPage.${value}`),
+                    }))}
+                    onChange={(value) => update({ sort: String(value) })}
+                  />
+                  <Input.Search
+                    key={keyword}
+                    defaultValue={keyword}
+                    placeholder={t("communityPage.search")}
+                    aria-label={t("communityPage.search")}
+                    onSearch={(value) => update({ keyword: value })}
+                    allowClear
+                  />
+                  <Select
+                    aria-label={t("communityPage.type")}
+                    value={type}
+                    onChange={(value) => update({ type: value })}
+                    options={COMMUNITY_FILTER_TYPES.map((value) => ({
+                      value,
+                      label: t(`communityPage.${value}`),
+                    }))}
+                  />
+                  <Button onClick={() => setReload((value) => value + 1)}>
+                    {t("communityPage.refresh")}
+                  </Button>
+                </div>
+                {error && (
+                  <Alert
+                    type="error"
+                    message={t(error)}
+                    description={t("communityPage.loadErrorHelp")}
+                    action={
+                      <Button onClick={() => setReload((v) => v + 1)}>
+                        {t("communityPage.retry")}
+                      </Button>
+                    }
+                  />
+                )}
+                <Spin spinning={loading}>
+                  <div className={styles.feed}>
+                    {!loading && !error && !items.length && (
+                      <Empty description={t("communityPage.empty")} />
+                    )}
+                    {items.map((post) => (
+                      <Link
+                        className={styles.post}
+                        key={post.id}
+                        to={`/market?tab=community&post=${encodeURIComponent(
+                          post.id,
+                        )}&${new URLSearchParams({
+                          sort,
+                          type,
+                          keyword,
+                          page: String(page),
+                        })}`}
+                      >
+                        <div className={styles.authorRow}>
+                          <Avatar
+                            size={28}
+                            src={mediaUrl(post.author_avatar_url)}
+                          >
+                            {post.author_name?.slice(0, 1)}
+                          </Avatar>
+                          <span className={styles.authorName}>
+                            {post.author_name}
+                          </span>
+                          <span className={styles.typeBadge}>
+                            {post.article_type_label}
+                          </span>
+                        </div>
+                        <div className={styles.postTitle}>
+                          <h2>{post.title}</h2>
+                          <QuestionStatus post={post} />
+                        </div>
+                        <p>{post.summary}</p>
+                        <div className={styles.postStats}>
+                          <time>{post.published_at?.slice(0, 10)}</time>
+                          <span>
+                            <MessageSquare size={14} aria-hidden="true" />
+                            {t("communityPage.commentCount", {
+                              count: post.comment_count || 0,
+                            })}
+                          </span>
+                          {!!post.like_count && (
+                            <span>
+                              <ThumbsUp size={14} aria-hidden="true" />
+                              {post.like_count}
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </Spin>
+                {data.total > 20 && (
+                  <Pagination
+                    current={page}
+                    pageSize={20}
+                    total={data.total}
+                    showSizeChanger={false}
+                    onChange={(value) => update({ page: String(value) })}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

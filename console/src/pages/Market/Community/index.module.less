@@ -275,3 +275,323 @@
     padding-left: 8px;
   }
 }
+
+// Quiet surfaces separate reading, discussion, and navigation.
+.scroll {
+  background: var(--app-bg);
+}
+.feed {
+  display: grid;
+  gap: 16px;
+  margin: 24px 0;
+}
+.post,
+.articleCard,
+.discussionCard {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 16px;
+}
+.post {
+  padding: 24px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+  &:hover {
+    border-color: var(--app-accent);
+    box-shadow: 0 3px 14px color-mix(in srgb, var(--app-text) 5%, transparent);
+  }
+  &:focus-visible {
+    outline-offset: 3px;
+  }
+  > p {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    margin: 10px 0 18px;
+  }
+}
+.authorRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  > :global(.ant-avatar) {
+    flex-shrink: 0;
+  }
+}
+.authorName {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.typeBadge {
+  margin-left: auto;
+  background: var(--app-surface-sunken);
+  color: var(--app-text-secondary);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.postStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+}
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  margin-bottom: 12px;
+  color: var(--app-text-secondary);
+}
+.articleCard {
+  padding: 32px;
+}
+.articleEyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--app-text-secondary);
+}
+.content .articleTitle {
+  margin: 12px 0 20px;
+  font-size: 28px;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.body {
+  margin: 32px 0;
+  font-size: 16px;
+  line-height: 1.85;
+  > :first-child {
+    margin-top: 0;
+  }
+  > :last-child {
+    margin-bottom: 0;
+  }
+  p {
+    margin: 0 0 1.15em;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    margin: 1.6em 0 0.65em;
+    line-height: 1.45;
+    font-weight: 600;
+  }
+  h1 {
+    font-size: 25px;
+  }
+  h2 {
+    font-size: 21px;
+  }
+  h3 {
+    font-size: 18px;
+  }
+  ul,
+  ol {
+    padding-left: 1.6em;
+    margin: 0 0 1.2em;
+  }
+  li {
+    margin: 0.4em 0;
+  }
+  li > p {
+    margin: 0.4em 0;
+  }
+  blockquote {
+    margin: 24px 0;
+    padding: 12px 18px;
+    background: var(--app-surface-sunken);
+    border-left: 3px solid var(--app-accent);
+    border-radius: 0 8px 8px 0;
+  }
+  blockquote p:last-child {
+    margin-bottom: 0;
+  }
+  img {
+    border-radius: 8px;
+  }
+  pre {
+    border: 1px solid var(--app-border);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  :not(pre) > code {
+    background: var(--app-surface-sunken);
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+  th,
+  td {
+    border: 1px solid var(--app-border);
+    padding: 8px 12px;
+  }
+  th {
+    background: var(--app-surface-sunken);
+  }
+}
+.articleActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--app-border);
+  padding-top: 20px;
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+  }
+}
+.activeAction {
+  color: var(--app-accent-text) !important;
+  background: var(--app-surface-sunken) !important;
+  border-color: var(--app-accent) !important;
+}
+.discussionCard {
+  padding: 24px 32px;
+  margin-top: 20px;
+}
+.discussionTabs {
+  margin-bottom: 16px;
+}
+.discussion {
+  border: 0;
+  padding: 0;
+  scroll-margin-top: 20px;
+}
+.sectionCount {
+  margin-left: 6px;
+  color: var(--app-text-secondary);
+  font-weight: 400;
+  font-size: 15px;
+}
+.composer {
+  background: var(--app-surface-sunken);
+  padding: 16px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+}
+.loginHint {
+  padding: 16px;
+  background: var(--app-surface-sunken);
+  border-radius: 10px;
+  margin: 16px 0;
+}
+.comment {
+  padding: 24px 0;
+  &:last-child {
+    border-bottom: 0;
+  }
+  .comment {
+    padding: 16px 0 0 16px;
+    margin-top: 12px;
+    border-bottom: 0;
+  }
+}
+.commentContent {
+  margin: 12px 0;
+  line-height: 1.8;
+  p {
+    margin: 0 0 8px;
+  }
+  pre {
+    overflow: auto;
+  }
+}
+.commentActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  button {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+.videoBlock {
+  display: block;
+  margin: 16px 0;
+}
+.body video {
+  display: block;
+  width: 100%;
+  max-height: 560px;
+  background: #111;
+  border-radius: 10px;
+}
+.mediaCaption {
+  display: block;
+  font-size: 13px;
+  margin-top: 8px;
+  color: var(--app-text-secondary);
+}
+@media (max-width: 600px) {
+  .feed {
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .post,
+  .articleCard,
+  .discussionCard {
+    padding: 18px 16px;
+    border-radius: 12px;
+  }
+  .authorRow {
+    gap: 6px;
+  }
+  .authorName {
+    max-width: 100%;
+  }
+  .typeBadge {
+    margin-left: 0;
+  }
+  .content .articleTitle {
+    font-size: 23px;
+  }
+  .body {
+    font-size: 15px;
+    margin: 24px 0;
+  }
+  .articleActions button,
+  .commentActions button {
+    min-height: 44px;
+  }
+  .composer {
+    padding: 12px;
+  }
+  .discussionCard {
+    margin-top: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .post {
+    transition: none;
+  }
+}
+
+.ownerActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 24px;
+}

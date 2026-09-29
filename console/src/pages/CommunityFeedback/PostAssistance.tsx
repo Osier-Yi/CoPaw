@@ -1,3 +1,5 @@
+import ReactMarkdown from "react-markdown";
+import { externalLinkMarkdownComponents } from "@/components/Markdown/externalLinkComponents";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -8,8 +10,20 @@ import {
   Space,
   Typography,
   Collapse,
+  Popover,
 } from "antd";
-import { Sparkles, ImagePlus, FileSearch, Upload } from "lucide-react";
+import {
+  Sparkles,
+  ImagePlus,
+  FileSearch,
+  Upload,
+  SlidersHorizontal,
+  Paperclip,
+  ArrowLeft,
+  Send,
+  UserRound,
+  FileInput,
+} from "lucide-react";
 import type { ReportScreenshots } from "./useReportScreenshots";
 import { useTranslation } from "react-i18next";
 import { agentsApi } from "@/api/modules/agents";
@@ -24,7 +38,11 @@ import { redactReportText } from "./reportPrivacy";
 import { ScreenshotEditor } from "./ScreenshotEditor";
 import styles from "./index.module.less";
 
+import type { AssistantSession } from "./writingSession";
+
 interface Props {
+  sessionState?: AssistantSession;
+  onSessionChange: (state: AssistantSession) => void;
   screenshots: ReportScreenshots;
   resources: ReportResource[];
   articleType: string;
@@ -37,6 +55,8 @@ interface Props {
 }
 
 export function PostAssistance({
+  sessionState,
+  onSessionChange,
   resources,
   screenshots,
   articleType,
@@ -48,40 +68,93 @@ export function PostAssistance({
   onBusy,
 }: Props) {
   const { t } = useTranslation();
-  const [language, setLanguage] = useState<"auto" | "zh" | "en">("auto");
+  const [language, setLanguage] = useState<"auto" | "zh" | "en">(
+    sessionState?.language || "auto",
+  );
   const [writingStyle, setWritingStyle] = useState<
     "auto" | "concise" | "detailed"
-  >("auto");
-  const [publicImages, setPublicImages] = useState(false);
-  const [insertedImages, setInsertedImages] = useState<Record<string, string>>(
-    {},
+  >(sessionState?.writingStyle || "auto");
+  const [materialsOpen, setMaterialsOpen] = useState<string[]>([]);
+  const [publicImages, setPublicImages] = useState<Record<string, string>>(
+    sessionState?.publicImages || {},
   );
-  useEffect(() => setPublicImages(false), [screenshots.images]);
+  const [insertedImages, setInsertedImages] = useState<Record<string, string>>(
+    sessionState?.insertedImages || {},
+  );
   const question = articleType === "question";
-  const [evidence, setEvidence] = useState<DiagnosticEvidence[]>([]);
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [evidence, setEvidence] = useState<DiagnosticEvidence[]>(
+    sessionState?.evidence || [],
+  );
+  const [warnings, setWarnings] = useState<string[]>(
+    sessionState?.warnings || [],
+  );
   const [agents, setAgents] = useState<{ value: string; label: string }[]>([]);
   const [sessions, setSessions] = useState<{ value: string; label: string }[]>(
     [],
   );
-  const [agent, setAgent] = useState<string>();
-  const [session, setSession] = useState("");
-  const [minutes, setMinutes] = useState(60);
+  const [agent, setAgent] = useState<string | undefined>(sessionState?.agent);
+  const [session, setSession] = useState(sessionState?.session || "");
+  const [minutes, setMinutes] = useState(sessionState?.minutes || 60);
   const [reviewed, setReviewed] = useState(false);
   const [busy, setBusy] = useState<"collect" | "generate" | "image">();
   const [error, setError] = useState("");
-  const [result, setResult] = useState("");
-  const [revision, setRevision] = useState("");
-  const [round, setRound] = useState(0);
+  const [result, setResult] = useState(sessionState?.result || "");
+  const [history, setHistory] = useState<
+    { role: "user" | "assistant"; content: string }[]
+  >(sessionState?.history || []);
+  const [writingAgent, setWritingAgent] = useState<string | undefined>(
+    sessionState?.writingAgent,
+  );
+  const [writingAgents, setWritingAgents] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [pendingText, setPendingText] = useState("");
   const resultPanel = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (round) resultPanel.current?.scrollIntoView({ block: "nearest" });
-  }, [round]);
+    const conversation = resultPanel.current?.parentElement;
+    if (conversation) conversation.scrollTop = conversation.scrollHeight;
+  }, [history.length, pendingText, busy]);
   const { images, setImages } = screenshots;
   const imageInput = useRef<HTMLInputElement>(null);
   const logInput = useRef<HTMLInputElement>(null);
   const disabled = !!busy || screenshots.loading;
   useEffect(() => setReviewed(false), [images]);
+  const previousImageCount = useRef(images.length);
+  useEffect(() => {
+    if (images.length > previousImageCount.current)
+      setMaterialsOpen(["materials"]);
+    previousImageCount.current = images.length;
+  }, [images.length]);
+  useEffect(() => {
+    onSessionChange({
+      language,
+      writingStyle,
+      history,
+      result,
+      writingAgent,
+      agent,
+      session,
+      minutes,
+      evidence,
+      warnings,
+      publicImages,
+      insertedImages,
+    });
+  }, [
+    onSessionChange,
+    language,
+    writingStyle,
+    history,
+    result,
+    writingAgent,
+    agent,
+    session,
+    minutes,
+    evidence,
+    warnings,
+    publicImages,
+    insertedImages,
+  ]);
   const operation = useRef<AbortController>();
   const mounted = useRef(true);
   const hasMaterials =
@@ -94,17 +167,28 @@ export function PostAssistance({
     };
   }, []);
   useEffect(() => {
-    if (!question) return;
     let active = true;
     agentsApi
       .listAgents()
       .then((value) => {
-        if (active)
+        if (active) {
+          setWritingAgents(
+            value.agents
+              .filter((item) => item.enabled && item.backend === "qwenpaw")
+              .map((item) => ({
+                value: item.id,
+                label: `${item.name} · ${
+                  item.active_model?.model ||
+                  t("communityAssist.inheritedModel")
+                }`,
+              })),
+          );
           setAgents(
             value.agents
               .filter((item) => item.enabled)
               .map((item) => ({ value: item.id, label: item.name })),
           );
+        }
       })
       .catch(() => {
         if (active) setError(t("communityAssist.contextFailed"));
@@ -112,11 +196,12 @@ export function PostAssistance({
     return () => {
       active = false;
     };
-  }, [question, t]);
+  }, [t]);
+  const previousAgent = useRef(agent);
   useEffect(() => {
-    if (!question) return;
     let active = true;
-    setSession("");
+    if (previousAgent.current !== agent) setSession("");
+    previousAgent.current = agent;
     setSessions([]);
     chatApi
       .listChats({ agentId: agent })
@@ -135,12 +220,26 @@ export function PostAssistance({
     return () => {
       active = false;
     };
-  }, [agent, question, t]);
+  }, [agent, t]);
+  const resourceKeys = resources
+    .map((item) => `${item.origin.resource_type}:${item.origin.resource_id}`)
+    .sort()
+    .join("|");
+  const evidenceContext = JSON.stringify([
+    agent,
+    session,
+    minutes,
+    resourceKeys,
+  ]);
+  const previousEvidenceContext = useRef(evidenceContext);
   useEffect(() => {
-    setEvidence([]);
-    setWarnings([]);
-    setReviewed(false);
-  }, [agent, session, minutes]);
+    if (previousEvidenceContext.current !== evidenceContext) {
+      setEvidence([]);
+      setWarnings([]);
+      setReviewed(false);
+    }
+    previousEvidenceContext.current = evidenceContext;
+  }, [evidenceContext]);
   const start = (kind: "collect" | "generate" | "image") => {
     const controller = new AbortController();
     operation.current = controller;
@@ -159,6 +258,7 @@ export function PostAssistance({
   };
   const cancel = () => {
     operation.current?.abort();
+    setPendingText("");
     operation.current = undefined;
     setBusy(undefined);
     onBusy(false);
@@ -188,12 +288,21 @@ export function PostAssistance({
       finish(controller);
     }
   };
-  const generate = async (followUp = false) => {
+  const generate = async () => {
+    const userText =
+      instructions.trim() || t("communityAssist.useDraftMaterials");
+    setMaterialsOpen([]);
+    setPendingText(userText);
     const controller = start("generate");
     try {
       const primary = resources[0];
       const data = await generateCommunityReport(
         {
+          agent_id: writingAgent,
+          history: history.slice(-12).map((turn) => ({
+            ...turn,
+            content: redactReportText(turn.content),
+          })),
           resource_name: primary?.name || t("communityPage.title"),
           resource_type: primary?.origin.resource_type || "plugin",
           installed_version: primary?.origin.installed_version || "",
@@ -208,17 +317,7 @@ export function PostAssistance({
             ).slice(0, 6000),
           ),
           draft: redactReportText(result || draft),
-          instructions: redactReportText(
-            followUp
-              ? `${instructions.slice(
-                  0,
-                  900,
-                )}\n\nRevision request (apply to the supplied draft, preserve everything else):\n${revision.slice(
-                  0,
-                  1000,
-                )}`
-              : instructions,
-          ),
+          instructions: redactReportText(userText),
           writing_style: writingStyle,
           logs: redactReportText(
             evidence
@@ -233,8 +332,12 @@ export function PostAssistance({
       );
       if (valid(controller)) {
         setResult(data.report);
-        setRound((current) => current + 1);
-        setRevision("");
+        setHistory((current) => [
+          ...current,
+          { role: "user", content: userText },
+          { role: "assistant", content: data.report },
+        ]);
+        onInstructions("");
       }
     } catch (err) {
       if (valid(controller))
@@ -249,6 +352,7 @@ export function PostAssistance({
           ),
         );
     } finally {
+      setPendingText("");
       finish(controller);
     }
   };
@@ -276,65 +380,179 @@ export function PostAssistance({
   );
   return (
     <div className={styles.assistance}>
-      <div className={styles.assistHeading}>
-        <Sparkles size={18} />
-        <strong>
-          {t(
-            question
-              ? "communityAssist.improveQuestion"
-              : "communityAssist.improveArticle",
-          )}
-        </strong>
-      </div>
-      <Typography.Text type="secondary">
-        {t(
-          question
-            ? "communityAssist.questionHelp"
-            : "communityAssist.articleHelp",
-          { board: t(`communityPage.${articleType}`) },
-        )}
-      </Typography.Text>
-      <div className={styles.field}>
-        <label htmlFor="community-writing-instructions">
-          {t("communityAssist.instructions")}
-        </label>
-        <Input.TextArea
-          id="community-writing-instructions"
-          value={instructions}
-          autoSize={{ minRows: 3, maxRows: 7 }}
-          maxLength={2000}
-          disabled={disabled}
-          placeholder={t(
-            question
-              ? "communityAssist.questionIdea"
-              : "communityAssist.articleIdea",
-          )}
-          onChange={(event) => onInstructions(event.target.value)}
-        />
-        <div className={styles.writingPreferences}>
-          <Select
-            aria-label={t("communityAssist.outputLanguage")}
-            value={language}
-            disabled={disabled}
-            onChange={setLanguage}
-            options={["auto", "zh", "en"].map((value) => ({
-              value,
-              label: t(`communityAssist.language_${value}`),
-            }))}
-          />
-          <Select
-            aria-label={t("communityAssist.writingStyle")}
-            value={writingStyle}
-            disabled={disabled}
-            onChange={setWritingStyle}
-            options={["auto", "concise", "detailed"].map((value) => ({
-              value,
-              label: t(`communityAssist.style_${value}`),
-            }))}
-          />
+      <header className={styles.assistantHeader}>
+        <div className={styles.assistHeading}>
+          <Sparkles size={18} />
+          <strong>
+            {t(
+              question
+                ? "communityAssist.improveQuestion"
+                : "communityAssist.improveArticle",
+            )}
+          </strong>
         </div>
-      </div>
-      {question && (
+        <Popover
+          trigger="click"
+          placement="bottomRight"
+          title={t("communityAssist.writingSettings")}
+          content={
+            <div className={styles.assistantSettings}>
+              <div className={styles.field}>
+                <label htmlFor="community-writing-agent">
+                  {t("communityAssist.writingAgent")}
+                </label>
+                <Select
+                  id="community-writing-agent"
+                  aria-label={t("communityAssist.writingAgent")}
+                  value={writingAgent}
+                  allowClear
+                  disabled={disabled}
+                  placeholder={t("communityAssist.currentAgentModel")}
+                  options={writingAgents}
+                  onChange={(value) => {
+                    setWritingAgent(value);
+                    setReviewed(false);
+                  }}
+                />
+                <p className={styles.hint}>
+                  {t("communityAssist.modelSource")}
+                </p>
+              </div>
+              <div className={styles.writingPreferences}>
+                <Select
+                  aria-label={t("communityAssist.outputLanguage")}
+                  value={language}
+                  disabled={disabled}
+                  onChange={setLanguage}
+                  options={["auto", "zh", "en"].map((value) => ({
+                    value,
+                    label: t(`communityAssist.language_${value}`),
+                  }))}
+                />
+                <Select
+                  aria-label={t("communityAssist.writingStyle")}
+                  value={writingStyle}
+                  disabled={disabled}
+                  onChange={setWritingStyle}
+                  options={["auto", "concise", "detailed"].map((value) => ({
+                    value,
+                    label: t(`communityAssist.style_${value}`),
+                  }))}
+                />
+              </div>
+            </div>
+          }
+        >
+          <Button
+            type="text"
+            icon={<SlidersHorizontal size={16} />}
+            aria-label={t("communityAssist.writingSettings")}
+          >
+            {t("communityAssist.writingSettings")}
+          </Button>
+        </Popover>
+      </header>
+      <section
+        className={styles.writingConversation}
+        hidden={materialsOpen.length > 0}
+        aria-label={t("communityAssist.conversation")}
+        aria-live="polite"
+      >
+        {history.length === 0 && busy !== "generate" && (
+          <div className={styles.conversationEmpty}>
+            <Sparkles size={28} aria-hidden="true" />
+            <strong>{t("communityAssist.chatStart")}</strong>
+            <p>{t("communityAssist.chatEmpty")}</p>
+          </div>
+        )}
+        {history.map((turn, index) => (
+          <div
+            key={index}
+            className={
+              turn.role === "user" ? styles.userTurn : styles.assistantTurn
+            }
+          >
+            <div className={styles.turnHeader}>
+              <span className={styles.turnIdentity}>
+                <span className={styles.turnAvatar} aria-hidden="true">
+                  {turn.role === "user" ? (
+                    <UserRound size={16} />
+                  ) : (
+                    <Sparkles size={16} />
+                  )}
+                </span>
+                <strong>
+                  {t(
+                    turn.role === "user"
+                      ? "communityAssist.you"
+                      : "communityAssist.assistant",
+                  )}
+                </strong>
+              </span>
+              {turn.role === "assistant" && (
+                <Button
+                  type="primary"
+                  className={styles.applyDraftButton}
+                  icon={<FileInput size={16} aria-hidden="true" />}
+                  disabled={disabled}
+                  onClick={() => onApply(turn.content)}
+                >
+                  {t("communityAssist.apply")}
+                </Button>
+              )}
+            </div>
+            <div className={styles.turnContent}>
+              <ReactMarkdown components={externalLinkMarkdownComponents}>
+                {turn.content}
+              </ReactMarkdown>
+            </div>
+          </div>
+        ))}
+        {busy === "generate" && (
+          <>
+            <div className={styles.userTurn}>
+              <div className={styles.turnHeader}>
+                <span className={styles.turnIdentity}>
+                  <span className={styles.turnAvatar} aria-hidden="true">
+                    <UserRound size={16} />
+                  </span>
+                  <strong>{t("communityAssist.you")}</strong>
+                </span>
+              </div>
+              <p className={styles.turnContent}>{pendingText}</p>
+            </div>
+            <div className={styles.assistantTurn} role="status">
+              <div className={styles.turnHeader}>
+                <span className={styles.turnIdentity}>
+                  <span className={styles.turnAvatar} aria-hidden="true">
+                    <Sparkles size={16} />
+                  </span>
+                  <strong>{t("communityAssist.assistant")}</strong>
+                </span>
+              </div>
+              <p className={styles.turnContent}>
+                {t("communityReport.generating")}
+              </p>
+            </div>
+          </>
+        )}
+        <div ref={resultPanel} />
+      </section>
+      <section
+        className={styles.materialWorkspace}
+        hidden={materialsOpen.length === 0}
+        aria-label={t("communityAssist.materials")}
+      >
+        <div className={styles.materialHeader}>
+          <Button
+            type="text"
+            icon={<ArrowLeft size={16} />}
+            onClick={() => setMaterialsOpen([])}
+          >
+            {t("communityAssist.backToChat")}
+          </Button>
+          <strong>{t("communityAssist.materials")}</strong>
+        </div>
         <Collapse
           ghost
           className={styles.diagnostics}
@@ -381,7 +599,7 @@ export function PostAssistance({
                       }))}
                     />
                     <Button
-                      disabled={disabled || !resources.length}
+                      disabled={disabled}
                       loading={busy === "collect"}
                       onClick={() => void collect()}
                     >
@@ -467,258 +685,242 @@ export function PostAssistance({
             },
           ]}
         />
-      )}
-      <section className={styles.imageMaterials}>
-        <div className={styles.sectionLabel}>
-          <span>{t("communityAssist.referenceImages")}</span>
-          <span>{images.length} / 2</span>
-        </div>
-        <div
-          role="group"
-          aria-label={t("communityAssist.referenceImages")}
-          tabIndex={disabled || images.length >= 2 ? -1 : 0}
-          className={styles.pasteArea}
-          aria-disabled={disabled || images.length >= 2}
-          onClick={(event) => {
-            if (!disabled && images.length < 2) event.currentTarget.focus();
-          }}
-          onDragOver={(event) => {
-            if (event.dataTransfer.types.includes("Files"))
-              event.preventDefault();
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            if (!disabled)
-              void screenshots.add(Array.from(event.dataTransfer.files));
-          }}
-        >
-          <ImagePlus size={23} />
-          <strong>
-            {t(
-              screenshots.loading
-                ? "communityAssist.readingImage"
-                : "communityAssist.pasteImage",
-            )}
-          </strong>
-          <span>{t("communityAssist.pasteImageHint")}</span>
-          <Button
-            size="small"
-            icon={<Upload size={14} />}
-            disabled={disabled || images.length >= 2}
+        <section className={styles.imageMaterials}>
+          <div className={styles.sectionLabel}>
+            <span>{t("communityAssist.referenceImages")}</span>
+            <span>{images.length} / 2</span>
+          </div>
+          <div
+            role="group"
+            aria-label={t("communityAssist.referenceImages")}
+            tabIndex={disabled || images.length >= 2 ? -1 : 0}
+            className={styles.pasteArea}
+            aria-disabled={disabled || images.length >= 2}
             onClick={(event) => {
-              event.stopPropagation();
-              imageInput.current?.click();
+              if (!disabled && images.length < 2) event.currentTarget.focus();
+            }}
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("Files"))
+                event.preventDefault();
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              if (!disabled)
+                void screenshots.add(Array.from(event.dataTransfer.files));
             }}
           >
-            {t("communityAssist.chooseImage")}
-          </Button>
-        </div>
-        <input
-          ref={imageInput}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          multiple
-          hidden
-          disabled={disabled || images.length >= 2}
-          onChange={(event) => {
-            const files = Array.from(event.target.files || []);
-            event.target.value = "";
-            void screenshots.add(files);
-          }}
-        />
-        <p className={styles.hint}>{t("communityAssist.imagePrivacy")}</p>
-        {screenshots.error && (
-          <Alert type="error" showIcon message={t(screenshots.error)} />
-        )}
-        {!!images.length && (
-          <Typography.Text type="secondary">
-            {t("communityReport.imageHelp")}
-          </Typography.Text>
-        )}
-        {!!images.length && (
-          <Checkbox
-            checked={publicImages}
-            disabled={disabled}
-            onChange={(event) => setPublicImages(event.target.checked)}
-          >
-            {t("communityAssist.publicImages")}
-          </Checkbox>
-        )}
-        {images.map((item, index) => (
-          <div key={item.id} className={styles.field}>
-            <ScreenshotEditor
-              key={item.id}
-              index={index}
-              source={item.source}
-              value={item.value}
-              disabled={disabled}
-              onChange={(value) => {
-                setImages((current) =>
-                  current.map((entry) =>
-                    entry.id === item.id ? { ...entry, value } : entry,
-                  ),
-                );
-                setReviewed(false);
-              }}
-              onRemove={() => {
-                setImages((current) =>
-                  current.filter((entry) => entry.id !== item.id),
-                );
-                setReviewed(false);
-              }}
-            />
+            <ImagePlus size={23} />
+            <strong>
+              {t(
+                screenshots.loading
+                  ? "communityAssist.readingImage"
+                  : "communityAssist.pasteImage",
+              )}
+            </strong>
+            <span>{t("communityAssist.pasteImageHint")}</span>
             <Button
-              disabled={
-                disabled ||
-                !publicImages ||
-                insertedImages[item.id] === item.value
-              }
-              onClick={async () => {
-                const controller = start("image");
-                try {
-                  await onInsertImage(item.value, index);
-                  if (valid(controller))
-                    setInsertedImages((current) => ({
-                      ...current,
-                      [item.id]: item.value,
-                    }));
-                } catch {
-                  if (valid(controller))
-                    setError(t("communityAssist.imageUploadFailed"));
-                } finally {
-                  finish(controller);
-                }
+              size="small"
+              icon={<Upload size={14} />}
+              disabled={disabled || images.length >= 2}
+              onClick={(event) => {
+                event.stopPropagation();
+                imageInput.current?.click();
               }}
             >
-              {t(
-                insertedImages[item.id] === item.value
-                  ? "communityAssist.imageInserted"
-                  : "communityAssist.insertImage",
-              )}
+              {t("communityAssist.chooseImage")}
             </Button>
           </div>
-        ))}
-      </section>
-      {hasMaterials && (
-        <Checkbox
-          checked={reviewed}
-          disabled={disabled}
-          onChange={(event) => setReviewed(event.target.checked)}
-        >
-          {t("communityReport.reviewMaterials")}
-        </Checkbox>
-      )}
-      {totalLength > 24000 && (
-        <Alert type="warning" message={t("communityReport.logTooLarge")} />
-      )}
-      {error && <Alert type="error" showIcon message={error} />}
-      <div className={styles.generateActions}>
-        {!(
-          draft.trim() ||
-          instructions.trim() ||
-          result.trim() ||
-          hasMaterials
-        ) && <p className={styles.hint}>{t("communityAssist.startHint")}</p>}
-        {hasMaterials && !reviewed && (
-          <p className={styles.hint}>{t("communityAssist.reviewHint")}</p>
-        )}
-        {!result && (
-          <Button
-            type="primary"
-            block
-            icon={<Sparkles size={14} />}
-            disabled={
-              disabled ||
-              !(
-                draft.trim() ||
-                instructions.trim() ||
-                result.trim() ||
-                hasMaterials
-              ) ||
-              (result || draft).length > 32000 ||
-              totalLength > 24000 ||
-              (hasMaterials && !reviewed)
-            }
-            loading={busy === "generate"}
-            onClick={() => void generate()}
-          >
-            {t(
-              result
-                ? "communityAssist.reviseDraft"
-                : draft.trim()
-                ? "communityAssist.refineDraft"
-                : "communityAssist.createDraft",
-            )}
-          </Button>
-        )}
-        {busy && (
-          <Button onClick={cancel}>
-            {t("communityReport.cancelGeneration")}
-          </Button>
-        )}
-        <Typography.Text type="secondary" role="status">
-          {t(
-            busy === "generate"
-              ? "communityReport.generating"
-              : "communityReport.modelHelp",
-          )}
-        </Typography.Text>
-      </div>
-      {result && (
-        <div className={styles.field} ref={resultPanel}>
-          <label htmlFor="community-assistant-result">
-            {t("communityAssist.resultVersion", { number: round })}
-          </label>
-          <Input.TextArea
-            id="community-assistant-result"
-            value={result}
-            maxLength={32000}
-            autoSize={{ minRows: 5, maxRows: 15 }}
-            onChange={(event) => setResult(event.target.value)}
-            disabled={disabled}
-          />
-          <Button
-            disabled={disabled || !result.trim()}
-            onClick={() => {
-              onApply(result);
-              setResult("");
+          <input
+            ref={imageInput}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            multiple
+            hidden
+            disabled={disabled || images.length >= 2}
+            onChange={(event) => {
+              const files = Array.from(event.target.files || []);
+              event.target.value = "";
+              void screenshots.add(files);
             }}
-          >
-            {t("communityAssist.apply")}
-          </Button>
-          <div className={styles.revisionPanel}>
-            <label htmlFor="community-revision-instructions">
-              {t("communityAssist.revisionLabel")}
+          />
+          <p className={styles.hint}>{t("communityAssist.imagePrivacy")}</p>
+          {screenshots.error && (
+            <Alert type="error" showIcon message={t(screenshots.error)} />
+          )}
+          {!!images.length && (
+            <Typography.Text type="secondary">
+              {t("communityReport.imageHelp")}
+            </Typography.Text>
+          )}
+          {images.map((item, index) => (
+            <div key={item.id} className={styles.field}>
+              <ScreenshotEditor
+                key={item.id}
+                index={index}
+                source={item.source}
+                value={item.value}
+                disabled={disabled}
+                onChange={(value) => {
+                  setImages((current) =>
+                    current.map((entry) =>
+                      entry.id === item.id ? { ...entry, value } : entry,
+                    ),
+                  );
+                  setReviewed(false);
+                }}
+                onRemove={() => {
+                  setImages((current) =>
+                    current.filter((entry) => entry.id !== item.id),
+                  );
+                  setReviewed(false);
+                }}
+              />
+              <div className={styles.consentAction}>
+                <Checkbox
+                  checked={publicImages[item.id] === item.value}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    setPublicImages((current) => ({
+                      ...current,
+                      [item.id]: event.target.checked ? item.value : "",
+                    }))
+                  }
+                >
+                  {t("communityAssist.publicImages")}
+                </Checkbox>
+                <Button
+                  disabled={
+                    disabled ||
+                    publicImages[item.id] !== item.value ||
+                    insertedImages[item.id] === item.value
+                  }
+                  onClick={async () => {
+                    const controller = start("image");
+                    try {
+                      await onInsertImage(item.value, index);
+                      if (valid(controller))
+                        setInsertedImages((current) => ({
+                          ...current,
+                          [item.id]: item.value,
+                        }));
+                    } catch {
+                      if (valid(controller))
+                        setError(t("communityAssist.imageUploadFailed"));
+                    } finally {
+                      finish(controller);
+                    }
+                  }}
+                >
+                  {t(
+                    insertedImages[item.id] === item.value
+                      ? "communityAssist.imageInserted"
+                      : "communityAssist.insertImage",
+                  )}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </section>
+      </section>
+      <div className={styles.chatComposer}>
+        {totalLength > 24000 && (
+          <Alert type="warning" message={t("communityReport.logTooLarge")} />
+        )}
+        {error && <Alert type="error" showIcon message={error} />}
+        <div className={styles.generateActions}>
+          <div className={styles.field}>
+            <label htmlFor="community-writing-instructions">
+              {t(
+                history.length
+                  ? "communityAssist.nextMessage"
+                  : "communityAssist.instructions",
+              )}
             </label>
             <Input.TextArea
-              id="community-revision-instructions"
-              value={revision}
-              onChange={(event) => setRevision(event.target.value)}
-              placeholder={t("communityAssist.revisionPlaceholder")}
-              autoSize={{ minRows: 2, maxRows: 5 }}
-              maxLength={1000}
+              id="community-writing-instructions"
+              value={instructions}
+              autoSize={{ minRows: 2, maxRows: 4 }}
+              maxLength={2000}
               disabled={disabled}
+              placeholder={t(
+                question
+                  ? "communityAssist.questionIdea"
+                  : "communityAssist.articleIdea",
+              )}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  (event.metaKey || event.ctrlKey) &&
+                  !disabled &&
+                  instructions.trim() &&
+                  (!hasMaterials || reviewed) &&
+                  totalLength <= 24000 &&
+                  (result || draft).length <= 32000
+                ) {
+                  event.preventDefault();
+                  void generate();
+                }
+              }}
+              onChange={(event) => onInstructions(event.target.value)}
             />
+          </div>
+
+          {hasMaterials && (
+            <Checkbox
+              checked={reviewed}
+              disabled={disabled}
+              onChange={(event) => setReviewed(event.target.checked)}
+            >
+              {t("communityReport.reviewMaterials")}
+            </Checkbox>
+          )}
+
+          {hasMaterials && !reviewed && (
+            <p className={styles.hint}>{t("communityAssist.reviewHint")}</p>
+          )}
+          <div className={styles.chatToolbar}>
+            <Button
+              type="text"
+              icon={<Paperclip size={16} />}
+              aria-expanded={materialsOpen.length > 0}
+              onClick={() =>
+                setMaterialsOpen(materialsOpen.length ? [] : ["materials"])
+              }
+            >
+              {t("communityAssist.attachments")}
+              {hasMaterials ? ` · ${images.length + evidence.length}` : ""}
+            </Button>
             <Button
               type="primary"
-              icon={<Sparkles size={14} />}
-              loading={busy === "generate"}
+              icon={<Send size={14} />}
               disabled={
                 disabled ||
-                !revision.trim() ||
-                !result.trim() ||
-                result.length > 32000 ||
+                !(
+                  instructions.trim() ||
+                  (!history.length && (draft.trim() || hasMaterials))
+                ) ||
+                (result || draft).length > 32000 ||
                 totalLength > 24000 ||
                 (hasMaterials && !reviewed)
               }
-              onClick={() => void generate(true)}
+              loading={busy === "generate"}
+              onClick={() => void generate()}
             >
-              {t("communityAssist.reviseDraft")}
+              {t("communityAssist.sendMessage")}
             </Button>
-            <p className={styles.hint}>{t("communityAssist.revisionHelp")}</p>
+            {busy && (
+              <Button onClick={cancel}>
+                {t("communityReport.cancelGeneration")}
+              </Button>
+            )}
           </div>
+          {busy && busy !== "generate" && (
+            <Typography.Text type="secondary" role="status">
+              {t("communityReport.modelHelp")}
+            </Typography.Text>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

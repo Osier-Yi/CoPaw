@@ -100,8 +100,18 @@ class ReportScreenshot(BaseModel):
         return value
 
 
+class WritingTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=MAX_REPORT)
+
+
 class CommunityReportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    agent_id: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9_.-]{1,128}$",
+    )
+    history: list[WritingTurn] = Field(default_factory=list, max_length=12)
     resource_name: str = Field(min_length=1, max_length=256)
     resource_type: Literal["plugin", "app", "skill"]
     installed_version: str = Field(default="", max_length=128)
@@ -133,12 +143,19 @@ class ReportGenerationError(Exception):
         self.code = code
 
 
-async def _get_model():
+async def _get_model(agent_id: str | None = None):
     # Uses configured model settings only. No Agent, session, tools, memory,
     # filesystem context, or application log collection is instantiated.
     from ..agents.model_factory import create_model_and_formatter_async
 
-    model, _ = await create_model_and_formatter_async()
+    if agent_id:
+        from ..config.utils import load_config
+        from ..utils.io_utils import run_sync_io
+
+        config = await run_sync_io(load_config)
+        if agent_id not in config.agents.profiles:
+            raise ReportGenerationError("model_not_available")
+    model, _ = await create_model_and_formatter_async(agent_id=agent_id)
     return model
 
 
@@ -191,7 +208,13 @@ def _model_messages(request: CommunityReportRequest):
         + " "
         + language
         + (
-            " Return only an editable Markdown draft, starting with one "
+            " Collaborate through a conversation. When the author asks "
+            "a question "
+            "or essential context is missing, answer or ask a concise "
+            "clarification "
+            "instead of forcing a draft. When asked to write or revise, "
+            "return "
+            "an editable Markdown draft, starting with one "
             "specific "
             "# title. Choose structure to fit the material: short "
             "paragraphs for "
@@ -263,6 +286,16 @@ def _model_messages(request: CommunityReportRequest):
             role="system",
             content=[{"type": "text", "text": prompt}],
         ),
+        *[
+            Msg(
+                name=turn.role,
+                role=turn.role,
+                content=[
+                    {"type": "text", "text": redact_report_text(turn.content)},
+                ],
+            )
+            for turn in request.history
+        ],
         Msg(name="user", role="user", content=content),
     ]
 
@@ -338,7 +371,11 @@ def _validate_report_input(request: CommunityReportRequest) -> None:
 async def generate_community_report(request: CommunityReportRequest) -> str:
     _validate_report_input(request)
     try:
-        model = await _get_model()
+        model = (
+            await _get_model(request.agent_id)
+            if request.agent_id
+            else await _get_model()
+        )
     except Exception as exc:
         raise ReportGenerationError("model_not_available") from exc
     stream = None

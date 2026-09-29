@@ -16,7 +16,10 @@ from ..installation_origin import InstallationOrigin, validated_origin
 
 class DiagnosticsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    origins: list[InstallationOrigin] = Field(min_length=1, max_length=6)
+    origins: list[InstallationOrigin] = Field(
+        default_factory=list,
+        max_length=6,
+    )
     minutes: int = Field(default=60, ge=5, le=1440)
     session_id: str = Field(default="", max_length=128)
 
@@ -61,6 +64,9 @@ def matching_logs(resources: list[dict], minutes: int) -> tuple[str, bool]:
     This is a text match, not proof that the resource caused the failure.
     The fixed application log is the only file this function can read.
     """
+    if not resources:
+        return "", False
+
     from ..utils.logging import LOG_FILE_PATH
 
     needles = {

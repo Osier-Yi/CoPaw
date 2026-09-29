@@ -18,6 +18,8 @@ vi.mock("./api", () => ({
     detail: vi.fn(),
     comments: vi.fn(),
     comment: vi.fn(),
+    interact: vi.fn(),
+    likeComment: vi.fn(),
   },
 }));
 vi.mock("@/api/modules/community", () => ({
@@ -228,7 +230,8 @@ it("opens the local article and question composers without publishing", async ()
   expect(
     screen.getByRole("button", { name: "communityCompose.publish" }),
   ).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "communityPage.back" }));
   fireEvent.click(
     screen.getByRole("button", { name: "communityPage.askOnPlatform" }),
   );
@@ -274,4 +277,117 @@ it("opens sanitized HTML and comment links through the desktop-compatible opener
   );
   fireEvent.click(screen.getByRole("link", { name: "Example" }));
   expect(openExternalLink).toHaveBeenCalledWith("https://example.com/");
+});
+
+it("renders uploaded video links with controls and removes image transforms", () => {
+  const { container } = renderWithProviders(
+    <PostBody
+      post={{
+        ...post,
+        body_html:
+          '<a href="https://example.com/demo.mp4?x-oss-process=image/resize,w_1920">Demo</a><video src="https://example.com/native.webm" autoplay onerror="alert(1)"></video>',
+      }}
+    />,
+  );
+  const videos = container.querySelectorAll("video");
+  expect(videos).toHaveLength(2);
+  expect(videos[0]).toHaveAttribute("src", "https://example.com/demo.mp4");
+  for (const video of videos) {
+    expect(video).toHaveAttribute("controls");
+    expect(video).not.toHaveAttribute("autoplay");
+    expect(video).not.toHaveAttribute("onerror");
+  }
+});
+
+it("keeps question answers and comments separate and submits an answer", async () => {
+  vi.mocked(communityPostsApi.detail).mockResolvedValue({
+    ...post,
+    article_type: "question",
+  });
+  vi.mocked(communityPostsApi.comments).mockImplementation(
+    async (_id, _page, _signal, kind) => ({
+      total: 1,
+      items: [
+        {
+          id: kind || "c",
+          author_name: "Bob",
+          content: kind === "answer" ? "A solution" : "A clarification",
+          kind,
+        },
+      ],
+    }),
+  );
+  renderWithProviders(<CommunityPage />, {
+    initialEntries: ["/market?tab=community&post=p1"],
+  });
+  expect(await screen.findByText("A solution")).toBeVisible();
+  expect(screen.getByText("A clarification")).not.toBeVisible();
+  fireEvent.change(screen.getByLabelText("communityPage.writeAnswer"), {
+    target: { value: "Try restarting" },
+  });
+  fireEvent.click(
+    screen.getByRole("radio", { name: "communityPage.commentQuestion" }),
+  );
+  expect(screen.getByText("A clarification")).toBeVisible();
+  expect(screen.getByText("A solution")).not.toBeVisible();
+  fireEvent.click(screen.getByRole("radio", { name: "communityPage.answers" }));
+  expect(screen.getByLabelText("communityPage.writeAnswer")).toHaveValue(
+    "Try restarting",
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "communityPage.sendAnswer" }),
+  );
+  await waitFor(() =>
+    expect(communityPostsApi.comment).toHaveBeenCalledWith(
+      "p1",
+      "Try restarting",
+      "account",
+      undefined,
+      "answer",
+    ),
+  );
+});
+
+it("reflects Platform likes and saved state and opens reports on Platform", async () => {
+  vi.mocked(communityPostsApi.interact)
+    .mockResolvedValueOnce({ liked: true, like_count: 6 })
+    .mockResolvedValueOnce({ favorited: true, favorite_count: 1 });
+  renderWithProviders(<CommunityPage />, {
+    initialEntries: ["/market?tab=community&post=p1"],
+  });
+  fireEvent.click(
+    (
+      await screen.findAllByRole("button", {
+        name: "communityPage.like",
+        pressed: false,
+      })
+    )[0],
+  );
+  expect(
+    await screen.findByRole("button", {
+      name: "communityPage.like 6",
+      pressed: true,
+    }),
+  ).toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "communityPage.favorite",
+      pressed: false,
+    }),
+  );
+  expect(
+    await screen.findByRole("button", {
+      name: "communityPage.favorited 1",
+      pressed: true,
+    }),
+  ).toBeInTheDocument();
+  expect(communityPostsApi.interact).toHaveBeenLastCalledWith(
+    "p1",
+    "favorite",
+    "account",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "communityPage.report" }));
+  expect(openExternalLink).toHaveBeenCalledWith(
+    "https://platform.agentscope.io/community/articles/p1",
+  );
 });

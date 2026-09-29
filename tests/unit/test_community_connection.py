@@ -828,3 +828,79 @@ async def test_network_failure_preserves_connected_account_and_messages():
     assert status["messages_enabled"] is True
     assert status["last_error"] == "network_unavailable"
     assert "private-network-details" not in json.dumps(status)
+
+
+@pytest.mark.asyncio
+async def test_personalized_post_reads_keep_account_interaction_state():
+    await seed_connection()
+
+    def handler(request):
+        assert request.headers["authorization"] == "Bearer access-secret"
+        return httpx.Response(200, json={"data": {"liked": True}})
+
+    result = await service(handler).community_request(
+        "GET",
+        "/api/v1/community/articles/post",
+        personalized=True,
+    )
+    assert result == {"liked": True}
+
+
+@pytest.mark.asyncio
+async def test_personalized_read_remains_public_without_login():
+    def handler(request):
+        assert "authorization" not in request.headers
+        return httpx.Response(200, json={"data": {"title": "Public post"}})
+
+    result = await service(handler).community_request(
+        "GET",
+        "/api/v1/community/articles/post",
+        personalized=True,
+    )
+    assert result["title"] == "Public post"
+
+
+@pytest.mark.asyncio
+async def test_private_drafts_never_fall_back_to_anonymous(monkeypatch):
+    await seed_connection()
+    from unittest.mock import AsyncMock
+
+    svc = service(lambda request: pytest.fail("No anonymous request allowed"))
+    monkeypatch.setattr(
+        svc,
+        "_fresh_connection",
+        AsyncMock(
+            side_effect=module.CommunityConnectionError(
+                "authorization_expired",
+                401,
+            ),
+        ),
+    )
+    with pytest.raises(
+        module.CommunityConnectionError,
+        match="authorization_expired",
+    ):
+        await svc.community_request(
+            "GET",
+            "/api/v1/community/me/drafts",
+            account_id="account-a",
+        )
+
+
+@pytest.mark.asyncio
+async def test_platform_draft_delete_null_envelope():
+    await seed_connection()
+    svc = service(
+        lambda request: httpx.Response(
+            200,
+            json={"data": None, "meta": {}, "request_id": "example"},
+        ),
+    )
+    assert (
+        await svc.community_request(
+            "DELETE",
+            "/api/v1/community/articles/drafts/example",
+            account_id="account-a",
+        )
+        == {}
+    )

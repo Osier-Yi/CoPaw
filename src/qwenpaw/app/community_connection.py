@@ -337,12 +337,16 @@ class CommunityConnectionService:
                 raise CommunityConnectionError("rate_limited", 429)
             if not response.is_success:
                 raise CommunityConnectionError("platform_unavailable", 502)
+            if method == "DELETE" and response.status_code == 204:
+                return {"data": {}}
             data = response.json()
             if not isinstance(data, dict) or data.get("success") is False:
                 raise CommunityConnectionError(
                     "invalid_platform_response",
                     502,
                 )
+            if method == "DELETE" and "data" in data and data["data"] is None:
+                data["data"] = {}
             return data
         except httpx.RequestError as exc:
             raise CommunityConnectionError("network_unavailable", 502) from exc
@@ -823,16 +827,19 @@ class CommunityConnectionService:
             ),
         }
 
+    # Public reads may fall back; account-bound reads must stay private.
+    # pylint: disable=too-many-branches
     async def community_request(
         self,
         method: str,
         path: str,
         *,
         account_id: str | None = None,
+        personalized: bool = False,
         **kwargs,
     ) -> dict:
         """Proxy community routes without exposing credentials."""
-        if method == "GET":
+        if method == "GET" and not personalized and account_id is None:
             data = await self._request(method, path, **kwargs)
             payload = data.get("data")
             if not isinstance(payload, dict):
@@ -842,14 +849,20 @@ class CommunityConnectionService:
                 )
             return payload
         connection = await store.get_connection()
-        if method != "GET" and (
+        if (method != "GET" or account_id is not None) and (
             not connection or connection["account_id"] != account_id
         ):
             raise CommunityConnectionError("connection_changed", 409)
         if connection:
-            connection = await self._fresh_connection(
-                expected_connection_id=connection["connection_id"],
-            )
+            try:
+                connection = await self._fresh_connection(
+                    expected_connection_id=connection["connection_id"],
+                )
+            except CommunityConnectionError:
+                if method != "GET" or account_id is not None:
+                    raise
+                # Public posts remain readable when authorization expires.
+                return await self.community_request("GET", path, **kwargs)
         try:
             data = await self._request(
                 method,
@@ -865,16 +878,21 @@ class CommunityConnectionService:
                 or exc.code != "authorization_expired"
             ):
                 raise
-            connection = await self._fresh_connection(
-                force_refresh=True,
-                expected_connection_id=connection["connection_id"],
-            )
-            data = await self._request(
-                method,
-                path,
-                token=connection["access_token"],
-                **kwargs,
-            )
+            try:
+                connection = await self._fresh_connection(
+                    force_refresh=True,
+                    expected_connection_id=connection["connection_id"],
+                )
+                data = await self._request(
+                    method,
+                    path,
+                    token=connection["access_token"],
+                    **kwargs,
+                )
+            except CommunityConnectionError:
+                if account_id is not None:
+                    raise
+                return await self.community_request("GET", path, **kwargs)
         if connection:
             current = await store.get_connection()
             if (

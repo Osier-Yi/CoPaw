@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   Alert,
   Button,
@@ -11,6 +18,7 @@ import {
   Spin,
 } from "antd";
 import {
+  ArrowLeft,
   MessageCircleQuestion,
   FileText,
   Sparkles,
@@ -18,6 +26,7 @@ import {
   Pencil,
   Plus,
   Link2,
+  ChevronDown,
 } from "lucide-react";
 import { useReportScreenshots } from "./useReportScreenshots";
 import { useTranslation } from "react-i18next";
@@ -32,6 +41,16 @@ import { ResourcePicker } from "./ResourcePicker";
 import { communityResourceIdentity } from "@/utils/communityResources";
 import { redactReportText } from "./reportPrivacy";
 import styles from "./index.module.less";
+import { getPostDraft, savePostDraft } from "./postDrafts";
+import {
+  getWritingSession,
+  saveWritingSession,
+  removeWritingSession,
+  removeWritingDraftSessions,
+  writingSessionKey,
+  type AssistantSession,
+} from "./writingSession";
+import { openExternalLink } from "@/utils/openExternalLink";
 import { request } from "@/api/request";
 import {
   communityConnectionApi,
@@ -45,25 +64,73 @@ import {
 import { communityErrorKey } from "@/utils/communityError";
 import type { InstallationOrigin } from "@/api/types/community";
 
-interface SavedDraft {
-  title: string;
-  content: string;
-  type: string;
-  resources: ReportResource[];
-  instructions?: string;
-  media?: { url: string; media_id: string }[];
+function ComposerFrame({
+  page,
+  title,
+  children,
+  footer,
+  width,
+  onClose,
+  busy,
+}: {
+  page: boolean;
+  title: ReactNode;
+  children: ReactNode;
+  footer: ReactNode;
+  width: number;
+  onClose: () => void;
+  busy: boolean;
+}) {
+  const { t } = useTranslation();
+  if (page)
+    return (
+      <section
+        className={styles.composerPage}
+        aria-label={t("communityCompose.title")}
+      >
+        <header className={styles.pageHeader}>
+          <Button
+            type="text"
+            icon={<ArrowLeft size={16} />}
+            disabled={busy}
+            onClick={onClose}
+          >
+            {t("communityPage.back")}
+          </Button>
+          <h1>{title}</h1>
+        </header>
+        {children}
+        {footer && <footer className={styles.pageFooter}>{footer}</footer>}
+      </section>
+    );
+  return (
+    <Modal
+      open
+      title={title}
+      className={styles.composerModal}
+      width={width}
+      style={{ top: 32 }}
+      maskClosable={false}
+      onCancel={busy ? undefined : onClose}
+      footer={footer}
+    >
+      {children}
+    </Modal>
+  );
 }
-// Page-lifetime cache only: no logs, screenshots or drafts in browser storage.
-const drafts = new Map<string, SavedDraft>();
 
 export function PostComposer({
   onClose,
+  presentation = "modal",
+  draftId,
   initialBody = "",
   initialType = "question",
   origin,
   resourceName,
 }: {
   onClose: () => void;
+  presentation?: "modal" | "page";
+  draftId?: string;
   initialBody?: string;
   initialType?: "question" | "discussion";
   origin?: InstallationOrigin;
@@ -78,13 +145,21 @@ export function PostComposer({
   const [type, setType] = useState<string>(initialType);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  const savedId = useRef<string | undefined>(draftId);
+  const [saveNotice, setSaveNotice] = useState("");
+  const [draftUnavailable, setDraftUnavailable] = useState(false);
+  const [draftLoading, setDraftLoading] = useState(Boolean(draftId));
+  const [richDraft, setRichDraft] = useState(false);
+  const [savedKind, setSavedKind] = useState<string>();
   const [published, setPublished] = useState<string>();
   const [assisting, setAssisting] = useState(false);
   const [assistInitialized, setAssistInitialized] = useState(false);
   const [assistBusy, setAssistBusy] = useState(false);
   const [instructions, setInstructions] = useState("");
   const [media, setMedia] = useState<{ url: string; media_id: string }[]>([]);
+  const [assistWidth, setAssistWidth] = useState(35);
   const [mobilePane, setMobilePane] = useState("write");
   const [preview, setPreview] = useState(false);
   const [catalog, setCatalog] = useState<ReportResource[]>([]);
@@ -92,70 +167,169 @@ export function PostComposer({
     origin ? [{ origin, name: resourceName || origin.resource_id }] : [],
   );
   const screenshots = useReportScreenshots(status?.account?.id);
-  const locked = busy || assistBusy || screenshots.loading;
+  const locked =
+    busy ||
+    assistBusy ||
+    screenshots.loading ||
+    draftUnavailable ||
+    draftLoading;
   const [addingResources, setAddingResources] = useState(false);
   const [loadingResources, setLoadingResources] = useState(false);
   const articleBoard = useRef("discussion");
   const draftOwner = useRef<string>();
   const cacheKey = useRef<string>();
-  const loadedDraft = useRef(false);
+  const [readyKey, setReadyKey] = useState("");
+  const [assistantSession, setAssistantSession] = useState<AssistantSession>();
+  const onAssistantSession = useCallback(
+    (value: AssistantSession) => setAssistantSession(value),
+    [],
+  );
+  const currentKey =
+    status?.status === "connected" && status.account
+      ? writingSessionKey(
+          status.account.id,
+          `${draftId || "new"}:${
+            origin ? reportResourceKey(origin) : `general:${initialType}`
+          }`,
+        )
+      : "";
   const mounted = useRef(true);
   useEffect(() => {
-    if (status?.status !== "connected" || !status.account) {
+    if (!currentKey || !status?.account) {
       setConfirmed(false);
       setAssistBusy(false);
+      setReadyKey("");
       return;
     }
-    const key = `${status.account.id}:${
-      origin ? reportResourceKey(origin) : `general:${initialType}`
-    }`;
-    if (draftOwner.current === status.account.id) return;
-    const saved = drafts.get(key);
-    // Never carry another account's unpublished content into a new account.
-    const first = !draftOwner.current;
-    draftOwner.current = status.account.id;
+    let active = true;
+    const key = currentKey;
+    const account = status.account.id;
+    draftOwner.current = account;
     cacheKey.current = key;
-    if (saved && !initialBody) {
-      setTitle(saved.title);
-      setContent(saved.content);
-      setType(saved.type);
-      setResources(saved.resources);
-      setInstructions(saved.instructions || "");
-      setMedia(saved.media || []);
-    } else if (!first) {
-      setTitle("");
-      setInstructions("");
-      setMedia([]);
-      setContent("");
-      setType(initialType);
-      setResources(
-        origin ? [{ origin, name: resourceName || origin.resource_id }] : [],
-      );
-    }
-    if (saved && saved.type !== "question") articleBoard.current = saved.type;
+    savedId.current = draftId;
+    setReadyKey("");
     setConfirmed(false);
     setAssisting(false);
+    setAssistInitialized(false);
+    setAssistantSession(undefined);
     setAssistBusy(false);
-    loadedDraft.current = false;
-  }, [status, origin, resourceName, initialBody, initialType]);
+    setSavedKind(undefined);
+    setRichDraft(false);
+    setDraftUnavailable(false);
+    setError(undefined);
+    setTitle(initialBody.match(/^#\s+(.+)/)?.[1]?.slice(0, 256) || "");
+    setContent(initialBody);
+    setType(initialType);
+    setInstructions("");
+    setMedia([]);
+    setResources(
+      origin ? [{ origin, name: resourceName || origin.resource_id }] : [],
+    );
+    setAddingResources(false);
+    setPreview(false);
+    setAssistWidth(35);
+    setMobilePane("write");
+    const restore = async () => {
+      setDraftLoading(true);
+      try {
+        const local = getWritingSession(key);
+        const saved =
+          local || (draftId ? await getPostDraft(account, draftId) : undefined);
+        if (!active) return;
+        if (saved && "editable" in saved && saved.editable === false) {
+          setRichDraft(true);
+          setDraftUnavailable(true);
+          return;
+        }
+        savedId.current = draftId || saved?.id;
+        if (saved) {
+          setTitle(saved.title);
+          setContent(saved.content);
+          setType(saved.type);
+          setResources(saved.resources);
+          setInstructions(saved.instructions || "");
+          setMedia(saved.media || []);
+          if (saved.id) setSavedKind(saved.type);
+          if (saved.type !== "question") articleBoard.current = saved.type;
+        }
+        if (local) {
+          setAssisting(local.assisting);
+          setAssistInitialized(local.assistInitialized);
+          setAssistantSession(local.assistant);
+          setAssistWidth(local.assistWidth);
+          setMobilePane(local.mobilePane);
+          setPreview(local.preview);
+          setAddingResources(local.addingResources);
+          screenshots.setImages(local.images);
+        }
+        setReadyKey(key);
+      } catch {
+        if (active) {
+          setDraftUnavailable(true);
+          setError("communityDrafts.failed");
+        }
+      } finally {
+        if (active) setDraftLoading(false);
+      }
+    };
+    void restore();
+    return () => {
+      active = false;
+    };
+    // Account, draft and resource identity are all represented by currentKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentKey]);
   useEffect(() => {
-    // Wait for the restored draft's render before saving it back.
-    if (!loadedDraft.current) {
-      loadedDraft.current = true;
-      return;
-    }
-    if (cacheKey.current && !published) {
-      drafts.set(cacheKey.current, {
-        title: redactReportText(title),
-        content: redactReportText(content),
+    if (
+      currentKey &&
+      readyKey === currentKey &&
+      !published &&
+      !draftUnavailable
+    ) {
+      saveWritingSession(currentKey, {
+        id: savedId.current,
+        draftId,
+        title,
+        content,
         type,
         resources,
-        instructions: redactReportText(instructions),
+        instructions,
         media,
+        initialType,
+        general: !origin,
+        assisting,
+        assistInitialized,
+        assistWidth,
+        mobilePane,
+        preview,
+        addingResources,
+        images: screenshots.images,
+        assistant: assistantSession,
       });
-      if (drafts.size > 20) drafts.delete(drafts.keys().next().value!);
     }
-  }, [title, content, type, resources, instructions, media, published, status]);
+  }, [
+    currentKey,
+    readyKey,
+    title,
+    content,
+    type,
+    resources,
+    instructions,
+    media,
+    published,
+    draftUnavailable,
+    initialType,
+    origin,
+    assisting,
+    assistInitialized,
+    assistWidth,
+    mobilePane,
+    preview,
+    addingResources,
+    screenshots.images,
+    assistantSession,
+    savedKind,
+  ]);
   const loadResources = async (showPicker = true) => {
     if (showPicker) setAddingResources(true);
     setLoadingResources(true);
@@ -172,6 +346,12 @@ export function PostComposer({
       if (mounted.current) setLoadingResources(false);
     }
   };
+  useEffect(() => {
+    if (readyKey && (addingResources || assistInitialized))
+      void loadResources(false);
+    // Refresh installed choices once when a writing session is restored.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readyKey]);
   useEffect(() => {
     mounted.current = true;
     const refresh = () =>
@@ -211,6 +391,51 @@ export function PostComposer({
       if (mounted.current) setBusy(false);
     }
   };
+  const saveDraft = async () => {
+    if (!status?.account || locked) return;
+    const account = status.account.id;
+    setBusy(true);
+    setSaving(true);
+    try {
+      const saved = await savePostDraft(
+        status.account.id,
+        {
+          title: redactReportText(title),
+          content: redactReportText(content),
+          type,
+          resources,
+          instructions: redactReportText(instructions),
+          media,
+        },
+        savedId.current,
+      );
+      if (!mounted.current || draftOwner.current !== account) return;
+      savedId.current = saved.id;
+      setSavedKind(type);
+      if (cacheKey.current) {
+        const session = getWritingSession(cacheKey.current);
+        if (session)
+          saveWritingSession(cacheKey.current, { ...session, id: saved.id });
+      }
+      setSaveNotice(
+        t("communityDrafts.saved", {
+          time: new Date(saved.updatedAt).toLocaleTimeString(),
+        }),
+      );
+      setError(undefined);
+    } catch {
+      setSaveNotice("");
+      setError("communityDrafts.saveFailed");
+    } finally {
+      if (mounted.current) {
+        setBusy(false);
+        setSaving(false);
+      }
+    }
+  };
+  useEffect(() => {
+    setSaveNotice("");
+  }, [title, content, type, resources, instructions, media]);
   const publish = async () => {
     if (
       status?.status !== "connected" ||
@@ -228,6 +453,7 @@ export function PostComposer({
         body: JSON.stringify({
           title,
           content,
+          draft_id: savedId.current,
           media_ids: media
             .filter((item) => content.includes(item.url))
             .map((item) => item.media_id),
@@ -236,7 +462,9 @@ export function PostComposer({
           origins: resources.map((item) => item.origin),
         }),
       });
-      if (cacheKey.current) drafts.delete(cacheKey.current);
+      if (cacheKey.current) removeWritingSession(cacheKey.current);
+      if (savedId.current)
+        removeWritingDraftSessions(status.account.id, savedId.current);
       setPublished(result.id);
     } catch (err) {
       setError(communityErrorKey(err));
@@ -247,6 +475,10 @@ export function PostComposer({
   const connected = status?.status === "connected";
   const changeType = (next: string) => {
     if (next !== "question") articleBoard.current = next;
+    if (savedKind && (savedKind === "question") !== (next === "question")) {
+      setError("communityDrafts.kindLocked");
+      return;
+    }
     setType(next);
     setConfirmed(false);
   };
@@ -257,16 +489,14 @@ export function PostComposer({
     if (!catalog.length) void loadResources(false);
   };
   return (
-    <Modal
-      open
+    <ComposerFrame
+      page={presentation === "page"}
       title={t(
         origin ? "communityFeedback.reportIssue" : "communityCompose.title",
       )}
-      className={styles.composerModal}
       width={assisting && connected ? 1120 : 800}
-      style={{ top: 32 }}
-      maskClosable={false}
-      onCancel={busy ? undefined : onClose}
+      busy={busy}
+      onClose={onClose}
       footer={
         connected && !published ? (
           <div className={styles.publishFooter}>
@@ -278,12 +508,19 @@ export function PostComposer({
               {t("communityCompose.confirm")}
             </Checkbox>
             <div className={styles.footerActions}>
-              <span className={styles.hint}>
-                {t("communityAssist.draftHelp")}
+              <span className={styles.hint} role="status">
+                {saveNotice || t("communityAssist.draftHelp")}
               </span>
               <Button
+                onClick={saveDraft}
+                loading={saving}
+                disabled={locked || !(title.trim() || content.trim())}
+              >
+                {t("communityDrafts.save")}
+              </Button>
+              <Button
                 type="primary"
-                loading={busy}
+                loading={busy && !saving}
                 disabled={
                   !confirmed || !title.trim() || !content.trim() || locked
                 }
@@ -312,6 +549,26 @@ export function PostComposer({
           void screenshots.add(files);
         }}
       >
+        {draftLoading && <Spin />}
+        {richDraft && (
+          <Alert
+            type="info"
+            message={t("communityDrafts.richText")}
+            action={
+              <Button
+                onClick={() =>
+                  openExternalLink(
+                    `https://platform.agentscope.io/community/write?draftId=${encodeURIComponent(
+                      draftId || "",
+                    )}`,
+                  )
+                }
+              >
+                {t("communityDrafts.platformEdit")}
+              </Button>
+            }
+          />
+        )}
         {error && (
           <Alert
             type="error"
@@ -366,6 +623,7 @@ export function PostComposer({
               className={styles.composerLayout}
               data-assisting={assisting}
               data-mobile-pane={mobilePane}
+              style={{ "--assist-width": `${assistWidth}%` } as CSSProperties}
             >
               <main className={styles.writingPane}>
                 <div className={styles.composeIntro}>
@@ -376,252 +634,374 @@ export function PostComposer({
                     })}
                   </span>
                 </div>
-                <Segmented
-                  block
-                  className={styles.typePicker}
-                  aria-label={t("communityPage.type")}
-                  value={type === "question" ? "question" : "article"}
-                  disabled={locked}
-                  options={[
-                    {
-                      value: "question",
-                      label: (
-                        <span className={styles.typeOption}>
-                          <MessageCircleQuestion size={19} />
-                          <span>
-                            <strong>{t("communityPage.question")}</strong>
-                            <small aria-hidden="true">
-                              {t("communityAssist.questionShort")}
-                            </small>
-                          </span>
-                        </span>
-                      ),
-                    },
-                    {
-                      value: "article",
-                      label: (
-                        <span className={styles.typeOption}>
-                          <FileText size={19} />
-                          <span>
-                            <strong>{t("communityAssist.article")}</strong>
-                            <small aria-hidden="true">
-                              {t("communityAssist.articleShort")}
-                            </small>
-                          </span>
-                        </span>
-                      ),
-                    },
-                  ]}
-                  onChange={(value) =>
-                    changeType(
-                      value === "question" ? "question" : articleBoard.current,
-                    )
-                  }
-                />
-                {type !== "question" && (
-                  <div className={styles.boardRow}>
-                    <label htmlFor="community-post-type">
-                      {t("communityAssist.board")}
-                    </label>
-                    <Select
-                      id="community-post-type"
-                      style={{ minWidth: 220, maxWidth: "100%" }}
-                      popupMatchSelectWidth={false}
-                      dropdownStyle={{ maxWidth: "calc(100vw - 32px)" }}
-                      optionRender={(option) => (
-                        <span style={{ whiteSpace: "normal" }}>
-                          {option.label}
-                        </span>
-                      )}
-                      value={type}
-                      onChange={changeType}
-                      disabled={locked}
-                      options={COMMUNITY_POST_TYPES.filter(
-                        (value) => value !== "question",
-                      ).map((value) => ({
-                        value,
-                        label: t(`communityPage.${value}`),
-                      }))}
-                    />
-                  </div>
-                )}
-                {!content.trim() && !assisting && (
-                  <button
-                    type="button"
-                    className={styles.assistStart}
-                    onClick={showAssistance}
-                  >
-                    <Sparkles size={18} />
-                    <span>
-                      <strong>{t("communityAssist.startWithAgent")}</strong>
-                      <small>{t("communityAssist.startWithAgentHelp")}</small>
-                    </span>
-                  </button>
-                )}
-                <div className={styles.resourceRow}>
-                  <span className={styles.resourceLabel}>
-                    <Link2 size={14} />
-                    {t("communityAssist.relatedResources")}
-                  </span>
-                  {resources.map((item) => (
-                    <Tag
-                      key={reportResourceKey(item.origin)}
-                      closable={
-                        !locked &&
-                        (!origin ||
-                          reportResourceKey(item.origin) !==
-                            reportResourceKey(origin))
-                      }
-                      onClose={() => {
-                        setResources((current) =>
-                          current.filter(
-                            (resource) =>
-                              reportResourceKey(resource.origin) !==
-                              reportResourceKey(item.origin),
-                          ),
-                        );
-                        setConfirmed(false);
-                        setAssisting(false);
-                      }}
-                    >
-                      {item.name} · {item.origin.resource_type}
-                    </Tag>
-                  ))}
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<Plus size={14} />}
+                <section
+                  className={styles.writingSection}
+                  aria-label={t("communityAssist.postSetup")}
+                >
+                  <h2 className={styles.sectionHeading}>
+                    <span className={styles.sectionNumber}>01</span>
+                    {t("communityAssist.postSetup")}
+                  </h2>
+                  <Segmented
+                    block
+                    className={styles.typePicker}
+                    aria-label={t("communityPage.type")}
+                    value={type === "question" ? "question" : "article"}
                     disabled={locked}
-                    loading={loadingResources}
-                    onClick={() => void loadResources()}
-                  >
-                    {t("communityAssist.addResources")}
-                  </Button>
-                </div>
-                {addingResources && (
-                  <ResourcePicker
-                    installed={catalog}
-                    selected={resources}
-                    disabled={locked}
-                    onChange={(selected) => {
-                      if (
-                        origin &&
-                        !selected.some(
-                          (item) =>
-                            communityResourceIdentity(item.origin) ===
-                            communityResourceIdentity(origin),
-                        )
+                    options={[
+                      {
+                        value: "question",
+                        label: (
+                          <span className={styles.typeOption}>
+                            <MessageCircleQuestion size={19} />
+                            <span>
+                              <strong>{t("communityPage.question")}</strong>
+                              <small aria-hidden="true">
+                                {t("communityAssist.questionShort")}
+                              </small>
+                            </span>
+                          </span>
+                        ),
+                      },
+                      {
+                        value: "article",
+                        label: (
+                          <span className={styles.typeOption}>
+                            <FileText size={19} />
+                            <span>
+                              <strong>{t("communityAssist.article")}</strong>
+                              <small aria-hidden="true">
+                                {t("communityAssist.articleShort")}
+                              </small>
+                            </span>
+                          </span>
+                        ),
+                      },
+                    ]}
+                    onChange={(value) =>
+                      changeType(
+                        value === "question"
+                          ? "question"
+                          : articleBoard.current,
                       )
-                        selected.unshift(
-                          resources.find(
+                    }
+                  />
+                  {type !== "question" && (
+                    <div className={styles.boardRow}>
+                      <label htmlFor="community-post-type">
+                        {t("communityAssist.board")}
+                      </label>
+                      <Select
+                        id="community-post-type"
+                        style={{ minWidth: 220, maxWidth: "100%" }}
+                        popupMatchSelectWidth={false}
+                        dropdownStyle={{ maxWidth: "calc(100vw - 32px)" }}
+                        optionRender={(option) => (
+                          <span style={{ whiteSpace: "normal" }}>
+                            {option.label}
+                          </span>
+                        )}
+                        value={type}
+                        onChange={changeType}
+                        disabled={locked}
+                        options={COMMUNITY_POST_TYPES.filter(
+                          (value) => value !== "question",
+                        ).map((value) => ({
+                          value,
+                          label: t(`communityPage.${value}`),
+                        }))}
+                      />
+                    </div>
+                  )}
+                </section>
+                <section
+                  className={styles.writingSection}
+                  aria-label={t("communityAssist.relatedResources")}
+                >
+                  <h2 className={styles.sectionHeading}>
+                    <span className={styles.sectionNumber}>02</span>
+                    {t("communityAssist.relatedResources")}
+                  </h2>
+                  <div className={styles.resourceSummary}>
+                    <span
+                      className={styles.resourceSummaryIcon}
+                      aria-hidden="true"
+                    >
+                      <Link2 size={20} />
+                    </span>
+                    <div>
+                      <strong>{t("communityAssist.linkContext")}</strong>
+                      <p>{t("communityAssist.linkContextHelp")}</p>
+                    </div>
+                    <Button
+                      className={styles.addResourcesButton}
+                      icon={
+                        addingResources ? (
+                          <ChevronDown size={16} />
+                        ) : (
+                          <Plus size={16} />
+                        )
+                      }
+                      disabled={locked}
+                      loading={loadingResources}
+                      aria-expanded={addingResources}
+                      onClick={() =>
+                        addingResources
+                          ? setAddingResources(false)
+                          : void loadResources()
+                      }
+                    >
+                      {t(
+                        addingResources
+                          ? "communityAssist.collapseLinks"
+                          : "communityAssist.addResources",
+                      )}
+                    </Button>
+                  </div>
+                  {resources.length > 0 && (
+                    <div className={styles.resourceRow}>
+                      {resources.map((item) => (
+                        <Tag
+                          key={reportResourceKey(item.origin)}
+                          closable={
+                            !locked &&
+                            (!origin ||
+                              reportResourceKey(item.origin) !==
+                                reportResourceKey(origin))
+                          }
+                          onClose={() => {
+                            setResources((current) =>
+                              current.filter(
+                                (resource) =>
+                                  reportResourceKey(resource.origin) !==
+                                  reportResourceKey(item.origin),
+                              ),
+                            );
+                            setConfirmed(false);
+                          }}
+                        >
+                          {item.name} · {item.origin.resource_type}
+                        </Tag>
+                      ))}
+                    </div>
+                  )}
+                  {addingResources && (
+                    <ResourcePicker
+                      installed={catalog}
+                      selected={resources}
+                      disabled={locked}
+                      onChange={(selected) => {
+                        if (
+                          origin &&
+                          !selected.some(
                             (item) =>
                               communityResourceIdentity(item.origin) ===
                               communityResourceIdentity(origin),
-                          )!,
-                        );
-                      if (
-                        [true, false].some(
-                          (skill) =>
-                            selected.filter(
-                              (item) =>
-                                (item.origin.resource_type === "skill") ===
-                                skill,
-                            ).length > 3,
+                          )
                         )
-                      ) {
-                        setError("communityAssist.tooManyResources");
-                        return;
-                      }
-                      setResources(selected);
-                      setConfirmed(false);
-                      setAssisting(false);
-                    }}
-                  />
-                )}
-                <label htmlFor="community-post-title">
-                  {t("communityCompose.postTitle")}
-                </label>
-                <Input
-                  className={styles.titleInput}
-                  placeholder={t("communityAssist.titlePlaceholder")}
-                  id="community-post-title"
-                  value={title}
-                  maxLength={256}
-                  disabled={locked}
-                  onChange={(event) => {
-                    setTitle(event.target.value);
-                    setConfirmed(false);
-                  }}
-                />
-                <div className={styles.editorActions}>
-                  <label htmlFor="community-post-body">
-                    {t("communityCompose.body")}
+                          selected.unshift(
+                            resources.find(
+                              (item) =>
+                                communityResourceIdentity(item.origin) ===
+                                communityResourceIdentity(origin),
+                            )!,
+                          );
+                        if (
+                          [true, false].some(
+                            (skill) =>
+                              selected.filter(
+                                (item) =>
+                                  (item.origin.resource_type === "skill") ===
+                                  skill,
+                              ).length > 3,
+                          )
+                        ) {
+                          setError("communityAssist.tooManyResources");
+                          return;
+                        }
+                        setResources(selected);
+                        setConfirmed(false);
+                      }}
+                    />
+                  )}
+                </section>
+                <section
+                  className={`${styles.writingSection} ${styles.contentSection}`}
+                  aria-label={t("communityAssist.postContent")}
+                >
+                  <h2 className={styles.sectionHeading}>
+                    <span className={styles.sectionNumber}>03</span>
+                    {t("communityAssist.postContent")}
+                  </h2>
+                  {!content.trim() && !assisting && (
+                    <button
+                      type="button"
+                      className={styles.assistStart}
+                      onClick={showAssistance}
+                    >
+                      <Sparkles size={18} />
+                      <span>
+                        <strong>{t("communityAssist.startWithAgent")}</strong>
+                        <small>{t("communityAssist.startWithAgentHelp")}</small>
+                      </span>
+                    </button>
+                  )}
+
+                  <label htmlFor="community-post-title">
+                    {t("communityCompose.postTitle")}
                   </label>
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={preview ? <Pencil size={14} /> : <Eye size={14} />}
-                    disabled={locked}
-                    aria-pressed={preview}
-                    onClick={() => setPreview(!preview)}
-                  >
-                    {t(
-                      preview
-                        ? "communityAssist.edit"
-                        : "communityAssist.preview",
-                    )}
-                  </Button>
-                  <Button
-                    size="small"
-                    icon={<Sparkles size={14} />}
-                    className={styles.assistToggle}
-                    aria-expanded={assisting}
-                    disabled={locked}
-                    onClick={() =>
-                      assisting ? setAssisting(false) : showAssistance()
-                    }
-                  >
-                    {t("communityAssist.assist")}
-                  </Button>
-                </div>
-                {preview ? (
-                  <div className={styles.preview}>
-                    <ReactMarkdown components={externalLinkMarkdownComponents}>
-                      {content || t("communityAssist.emptyPreview")}
-                    </ReactMarkdown>
-                  </div>
-                ) : (
-                  <Input.TextArea
-                    placeholder={t(
-                      type === "question"
-                        ? "communityAssist.questionPlaceholder"
-                        : "communityAssist.articlePlaceholder",
-                    )}
-                    id="community-post-body"
-                    value={content}
-                    maxLength={65536}
-                    className={styles.bodyInput}
-                    autoSize={{ minRows: 9, maxRows: 16 }}
+                  <Input
+                    className={styles.titleInput}
+                    placeholder={t("communityAssist.titlePlaceholder")}
+                    id="community-post-title"
+                    value={title}
+                    maxLength={256}
                     disabled={locked}
                     onChange={(event) => {
-                      setContent(event.target.value);
+                      setTitle(event.target.value);
                       setConfirmed(false);
                     }}
                   />
-                )}
-                <div className={styles.editorHint}>
-                  <span>{t("communityAssist.editorHint")}</span>
-                  <span>{content.length.toLocaleString()} / 65,536</span>
-                </div>
+                  <div className={styles.editorActions}>
+                    <label htmlFor="community-post-body">
+                      {t("communityCompose.body")}
+                    </label>
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={preview ? <Pencil size={14} /> : <Eye size={14} />}
+                      disabled={locked}
+                      aria-pressed={preview}
+                      onClick={() => setPreview(!preview)}
+                    >
+                      {t(
+                        preview
+                          ? "communityAssist.edit"
+                          : "communityAssist.preview",
+                      )}
+                    </Button>
+                    <Button
+                      size="small"
+                      icon={<Sparkles size={14} />}
+                      className={styles.assistToggle}
+                      aria-expanded={assisting}
+                      disabled={locked}
+                      onClick={() =>
+                        assisting ? setAssisting(false) : showAssistance()
+                      }
+                    >
+                      {t("communityAssist.assist")}
+                    </Button>
+                  </div>
+                  {preview ? (
+                    <div className={styles.preview}>
+                      <ReactMarkdown
+                        components={externalLinkMarkdownComponents}
+                      >
+                        {content || t("communityAssist.emptyPreview")}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    <Input.TextArea
+                      placeholder={t(
+                        type === "question"
+                          ? "communityAssist.questionPlaceholder"
+                          : "communityAssist.articlePlaceholder",
+                      )}
+                      id="community-post-body"
+                      value={content}
+                      maxLength={65536}
+                      className={styles.bodyInput}
+                      autoSize={{ minRows: 9, maxRows: 16 }}
+                      disabled={locked}
+                      onChange={(event) => {
+                        setContent(event.target.value);
+                        setConfirmed(false);
+                      }}
+                    />
+                  )}
+                  <div className={styles.editorHint}>
+                    <span>{t("communityAssist.editorHint")}</span>
+                    <span>{content.length.toLocaleString()} / 65,536</span>
+                  </div>
+                </section>
               </main>
-              {assistInitialized && (
+              {assisting && (
+                <div
+                  className={styles.resizeHandle}
+                  role="separator"
+                  tabIndex={0}
+                  aria-label={t("communityAssist.resizePane")}
+                  aria-orientation="vertical"
+                  aria-valuemin={30}
+                  aria-valuemax={55}
+                  aria-valuenow={assistWidth}
+                  title={t("communityAssist.resizePane")}
+                  onDoubleClick={() => setAssistWidth(35)}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    event.currentTarget.focus();
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                  }}
+                  onPointerMove={(event) => {
+                    if (!event.currentTarget.hasPointerCapture(event.pointerId))
+                      return;
+                    const bounds =
+                      event.currentTarget.parentElement!.getBoundingClientRect();
+                    setAssistWidth(
+                      Math.round(
+                        Math.max(
+                          30,
+                          Math.min(
+                            55,
+                            ((bounds.right - event.clientX) / bounds.width) *
+                              100,
+                          ),
+                        ),
+                      ),
+                    );
+                  }}
+                  onPointerUp={(event) => {
+                    if (event.currentTarget.hasPointerCapture(event.pointerId))
+                      event.currentTarget.releasePointerCapture(
+                        event.pointerId,
+                      );
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                        event.key,
+                      )
+                    )
+                      return;
+                    event.preventDefault();
+                    setAssistWidth((width) =>
+                      event.key === "Home"
+                        ? 30
+                        : event.key === "End"
+                        ? 55
+                        : Math.max(
+                            30,
+                            Math.min(
+                              55,
+                              width + (event.key === "ArrowLeft" ? 2 : -2),
+                            ),
+                          ),
+                    );
+                  }}
+                />
+              )}
+              {assistInitialized && readyKey === currentKey && (
                 <aside
                   hidden={!assisting}
                   className={styles.assistancePane}
                   aria-label={t("communityAssist.assist")}
                 >
                   <PostAssistance
-                    key={`${status.account?.id}:${type}`}
+                    key={currentKey}
+                    sessionState={assistantSession}
+                    onSessionChange={onAssistantSession}
                     resources={resources.map(
                       (item) =>
                         catalog.find(
@@ -659,8 +1039,20 @@ export function PostComposer({
                     }}
                     onBusy={setAssistBusy}
                     onApply={(text) => {
-                      const match = text.match(/^#\s+(.+)/);
-                      if (match) setTitle(match[1].slice(0, 256));
+                      // Only a leading H1 is the post title; keep all body headings.
+                      const match = text.match(
+                        /^\s*# [\t ]*(\S[^\r\n]*)(?:\r?\n|$)/,
+                      );
+                      const body = match
+                        ? text.slice(match[0].length).trimStart()
+                        : text;
+                      if (match)
+                        setTitle(
+                          match[1]
+                            .replace(/\s+#+\s*$/, "")
+                            .trim()
+                            .slice(0, 256),
+                        );
                       // Keep explicitly inserted images even if the model omitted them.
                       const imageLinks =
                         content.match(/!\[[^\]]*\]\(https:\/\/[^\s)]+\)/g) ||
@@ -669,7 +1061,7 @@ export function PostComposer({
                         (link) =>
                           !text.includes(link.match(/\((.+)\)/)?.[1] || link),
                       );
-                      setContent([text, ...missing].join("\n\n"));
+                      setContent([body, ...missing].join("\n\n"));
                       setMobilePane("write");
                       setConfirmed(false);
                       setPreview(false);
@@ -682,6 +1074,6 @@ export function PostComposer({
           </>
         )}
       </div>
-    </Modal>
+    </ComposerFrame>
   );
 }
