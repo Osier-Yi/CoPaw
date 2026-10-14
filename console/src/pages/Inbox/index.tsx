@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 import {
   Tabs,
   Alert,
@@ -31,7 +32,6 @@ import { CommunityRelatedResources } from "./components/CommunityRelatedResource
 import { CommunityInboxState } from "./components/CommunityInboxState";
 import { useMailPendingCount } from "./hooks/useMailPendingCount";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router-dom";
 import {
   INBOX_OPEN_EVENT,
   INBOX_SOURCE_STORAGE_KEY,
@@ -156,8 +156,14 @@ const getMailDetail = (messageItem: PushMessage | null): MailDetail | null => {
 
 export default function InboxPage() {
   const { t } = useTranslation();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<TabKey>(resolveInitialTab);
+  const requestedTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<TabKey>(() =>
+    requestedTab === "approvals" || requestedTab === "messages"
+      ? requestedTab
+      : resolveInitialTab(),
+  );
   const [mailAclDrawerOpen, setMailAclDrawerOpen] = useState(false);
   const {
     pendingCount,
@@ -308,6 +314,12 @@ export default function InboxPage() {
     () => getMailDetail(selectedMessage),
     [selectedMessage],
   );
+
+  useEffect(() => {
+    if (requestedTab === "approvals" || requestedTab === "messages") {
+      setActiveTab(requestedTab);
+    }
+  }, [location.key, requestedTab]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {

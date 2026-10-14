@@ -19,6 +19,7 @@ import type {
   MenuItem,
   MenuLocation,
   Route,
+  RouteMeta,
   RouteWrapper,
   SlotInfo,
   SlotKind,
@@ -357,6 +358,7 @@ interface ResolvedRoute {
   id: string;
   path: string;
   source: string;
+  meta?: RouteMeta;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Component: React.ComponentType<any>;
 }
@@ -593,6 +595,7 @@ class RouteRegistryImpl {
         id: entry.route.id,
         path: entry.route.path,
         source: overrideTop?.source ?? entry.source,
+        meta: entry.route.meta,
         Component,
       });
     }

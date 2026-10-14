@@ -9,7 +9,7 @@
  * Reachable at /os (registered in App.tsx) — isolated from MainLayout so the
  * classic sidebar layout is untouched.
  */
-import { Suspense, useMemo, useEffect, useState, useCallback } from "react";
+import { useMemo, useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { App, Dropdown, Spin, type MenuProps } from "antd";
 import { Grid2X2, Image as ImageIcon, Trash2 } from "lucide-react";
@@ -17,6 +17,7 @@ import { PawAppAccessGate } from "../plugins/PawAppAccessGate";
 import { useRoutes } from "../plugins/registry/hooks";
 import { uninstallPlugin } from "../api/modules/plugin";
 import { ChunkErrorBoundary } from "../components/ChunkErrorBoundary";
+import { ChunkRecoverySuspense } from "../components/ChunkRecoverySuspense";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useAgentStore } from "../stores/agentStore";
 import { useSyncCodingMode } from "../stores/useSyncCodingMode";
@@ -480,7 +481,7 @@ export default function DesktopOS() {
               minH={def.minH}
             >
               <ChunkErrorBoundary resetKey={win.id}>
-                <Suspense
+                <ChunkRecoverySuspense
                   fallback={
                     <div className={styles.loading}>
                       <Spin tip={t("common.loading")} />
@@ -506,7 +507,7 @@ export default function DesktopOS() {
                       }
                     />
                   ) : null}
-                </Suspense>
+                </ChunkRecoverySuspense>
               </ChunkErrorBoundary>
             </WindowFrame>
           );

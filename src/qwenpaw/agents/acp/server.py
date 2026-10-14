@@ -1062,11 +1062,9 @@ class QwenPawACPAgent(Agent):
     def _pending_cancel_reason(pending_future: asyncio.Future) -> str:
         """Why a pending approval resolved before the client answered.
 
-        ``wait_for_approval`` times out via ``asyncio.wait_for``, which
-        cancels the shared future instead of setting a TIMEOUT result —
-        check ``cancelled()`` before ``result()``, which would raise
-        CancelledError (a BaseException that would escape the bridge and
-        kill the polling loop in ``_bridge_approval_requests``).
+        Timeouts resolve the shared future with TIMEOUT. Also handle futures
+        cancelled by another caller before reading their result, so a
+        CancelledError cannot escape and kill the approval polling loop.
         """
         from ...security.tool_guard.approval import ApprovalDecision
 

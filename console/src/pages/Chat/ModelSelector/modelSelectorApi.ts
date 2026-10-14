@@ -23,9 +23,13 @@ export async function loadModelSelectorData(
   agentId: string,
   dataSource: ModelSelectorDataSource = providerApi,
   session?: SessionModelScope,
+  onProviders?: (providers: ProviderInfo[]) => void,
 ): Promise<ModelSelectorData> {
   const [providersResult, activeResult] = await Promise.allSettled([
-    dataSource.listProviders(),
+    dataSource.listProviders().then((providers) => {
+      if (Array.isArray(providers)) onProviders?.(providers);
+      return providers;
+    }),
     session
       ? loadSessionModel(agentId, session)
       : dataSource.getActiveModels({

@@ -339,6 +339,9 @@ class ApprovalService:
             actor: caller identity used by policies stricter than ``AGENT``.
                 Exact-requester approvals reject missing or mismatched actors.
                 Automatic timeout resolution is the only actor-free exception.
+
+        Returns None if another resolver won or the request expired.
+        Expired requests resolve to TIMEOUT even when an approval arrives.
         """
         async with self._lock:
             pending = self._pending.get(request_id)
@@ -359,6 +362,13 @@ class ApprovalService:
                     "approval caller does not match the original requester",
                 )
 
+            expired = (
+                time.time() >= pending.created_at + pending.timeout_seconds
+            )
+            if expired:
+                decision = ApprovalDecision.TIMEOUT
+                scope = None
+
             self._pending.pop(request_id)
             pending.status = decision.value
             pending.resolved_at = time.time()
@@ -376,7 +386,7 @@ class ApprovalService:
             pending.tool_name,
         )
 
-        return pending
+        return None if expired else pending
 
     @staticmethod
     def actor_can_resolve(
@@ -505,13 +515,13 @@ class ApprovalService:
 
     async def wait_for_approval(
         self,
-        request_id: str,
+        request_id: str | PendingApproval,
         timeout_seconds: float,
     ) -> ApprovalDecision:
         """Block and wait for approval decision with timeout.
 
         Args:
-            request_id: Approval request ID
+            request_id: Request ID or the record returned when created.
             timeout_seconds: Maximum wait time in seconds
 
         Returns:
@@ -520,20 +530,36 @@ class ApprovalService:
         Raises:
             ValueError: If request_id not found
         """
-        async with self._lock:
-            pending = self._pending.get(request_id)
+        if isinstance(request_id, PendingApproval):
+            # Retain decisions resolved before the consumer starts waiting.
+            pending = request_id
+        else:
+            async with self._lock:
+                pending = self._pending.get(request_id)
 
         if pending is None:
             raise ValueError(f"Approval request {request_id} not found")
 
         try:
             decision = await asyncio.wait_for(
-                pending.future,
-                timeout=timeout_seconds,
+                asyncio.shield(pending.future),
+                timeout=max(
+                    0.0,
+                    min(
+                        timeout_seconds,
+                        pending.created_at
+                        + pending.timeout_seconds
+                        - time.time(),
+                    ),
+                ),
             )
         except asyncio.TimeoutError:
-            decision = ApprovalDecision.TIMEOUT
-            await self.resolve_request(request_id, decision)
+            await self.resolve_request(
+                pending.request_id,
+                ApprovalDecision.TIMEOUT,
+            )
+            # A response may have won the race with this waiter's timeout.
+            decision = pending.future.result()
 
         return decision
 

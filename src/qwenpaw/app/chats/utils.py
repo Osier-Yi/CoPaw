@@ -3,7 +3,8 @@ import json
 import logging
 import platform
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
+from functools import lru_cache
 from typing import List, Optional, Union
 from urllib.parse import unquote, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -29,6 +30,7 @@ from qwenpaw.exceptions import (
 )
 
 from ...config import load_config
+from ...config.timezone import detect_system_timezone
 from ...constant import (
     QWENPAW_MESSAGE_TAG_KEY,
     QWENPAW_USER_CONTENT_KEY,
@@ -39,9 +41,54 @@ from ...constant import (
 logger = logging.getLogger(__name__)
 
 
-def _process_local_tz():
-    """Return the process-local timezone used by ``datetime.now()``."""
+def _fixed_local_tz() -> tzinfo:
+    """The process's current fixed offset, as ``datetime.now()`` sees it."""
     return datetime.now().astimezone().tzinfo or timezone.utc
+
+
+def _resolve_process_zone() -> Optional[ZoneInfo]:
+    """Return the host's IANA zone, or ``None`` when none can be resolved."""
+    try:
+        return ZoneInfo(detect_system_timezone())
+    except (ZoneInfoNotFoundError, KeyError, ValueError):
+        return None
+
+
+def _zone_explains_offset(zone: ZoneInfo, fixed: tzinfo) -> bool:
+    """Whether *zone* puts the current wall clock at *fixed*'s offset.
+
+    ``detect_system_timezone()`` cannot report failure — it falls back to
+    ``"UTC"`` — so a resolved zone is only trustworthy when it agrees with
+    the offset the process is actually running at.  Otherwise a host whose
+    zone cannot be resolved would be stamped ``+00:00`` — off by the whole
+    UTC offset, not by the DST delta.
+    """
+    now = datetime.now()
+    return (
+        now.replace(tzinfo=zone).utcoffset()
+        == now.replace(
+            tzinfo=fixed,
+        ).utcoffset()
+    )
+
+
+@lru_cache(maxsize=1)
+def _process_local_tz():
+    """Return the process-local timezone used by ``datetime.now()``.
+
+    Resolve the host's IANA zone so the returned ``tzinfo`` carries DST
+    rules.  ``datetime.now().astimezone().tzinfo`` only ever describes the
+    *current* offset (a fixed ``datetime.timezone``), so attaching it to a
+    naive timestamp recorded in the opposite DST half-year silently shifts
+    the value by the DST delta.  The resolved zone is kept only when it
+    explains the process's current offset; otherwise it falls back to the
+    previous behaviour and uses the fixed offset.
+    """
+    fixed = _fixed_local_tz()
+    zone = _resolve_process_zone()
+    if zone is not None and _zone_explains_offset(zone, fixed):
+        return zone
+    return fixed
 
 
 def _normalize_msg_timestamp(ts_value: str, user_tz: ZoneInfo) -> str:

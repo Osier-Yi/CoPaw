@@ -23,7 +23,7 @@
     "test:coverage": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run --coverage"
   },
   "dependencies": {
-    "@agentscope-ai/chat": "1.2.0-beta.1789540479556",
+    "@agentscope-ai/chat": "1.2.0-beta.1791860734622",
     "@agentscope-ai/design": "1.0.29",
     "@ant-design/icons": "^5.0.1",
     "@ant-design/plots": "^2.6.8",
@@ -95,6 +95,7 @@
     "@types/topojson-specification": "^1.0.5",
     "@vitejs/plugin-react": "^4.4.1",
     "@vitest/coverage-v8": "^4.1.6",
+    "esbuild": "^0.25.12",
     "eslint": "^9.25.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",

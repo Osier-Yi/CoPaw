@@ -381,7 +381,7 @@ async def _request_reme_action_approval(
     )
     try:
         decision = await service.wait_for_approval(
-            pending.request_id,
+            pending,
             TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS,
         )
     except asyncio.CancelledError:

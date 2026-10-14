@@ -40,8 +40,11 @@ describe("useModelSelectorData", () => {
         name: "OpenAI",
       } as ProviderInfo,
     ];
-    vi.mocked(modelSelectorApi.loadModelSelectorData).mockReturnValue(
-      initial.promise,
+    vi.mocked(modelSelectorApi.loadModelSelectorData).mockImplementation(
+      (_agent, _source, _session, onProviders) => {
+        onProviders?.(providers);
+        return initial.promise;
+      },
     );
     vi.mocked(modelSelectorApi.loadActiveModels).mockResolvedValue(refreshed);
     const onActiveModels = vi.fn();

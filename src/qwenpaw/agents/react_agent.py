@@ -146,6 +146,58 @@ _REQUEST_SCOPED_MEDIA_LIMIT_SIGNALS = (
     "file size",
 )
 
+# Asset-level media failures: the provider refused these bytes (undecodable
+# data, an unsupported container, a declared MIME type it cannot render).
+# They say nothing about the model, so they must never be learned as a
+# capability loss — the payload classifier below owns the recovery.
+_INVALID_MEDIA_ASSET_SIGNALS = (
+    "corrupt",
+    "decode",
+    "invalid image",
+    "invalid media",
+    "mime",
+    "unsupported image format",
+)
+
+# The gate for the media-free retry promised by
+# ``_REQUEST_SCOPED_MEDIA_LIMIT_SIGNALS``: those signals reject the current
+# media shape, and asset-level failures reject the current bytes. Both are
+# recoverable by dropping the media, and neither says anything about the
+# model's multimodal capability.
+#
+# Recovery is not optional here: the offending block is replayed from the
+# stored context on every later turn, so without a media-free retry the
+# provider keeps returning the same 400 and the session never heals.
+# DeepSeek, for example, answers an image whose side exceeds its 8192 px
+# limit with "You have uploaded an unsupported image" — the message names
+# neither the limit nor the model's capability.
+_MEDIA_PAYLOAD_REJECTION_SIGNALS = (
+    *_REQUEST_SCOPED_MEDIA_LIMIT_SIGNALS,
+    *_INVALID_MEDIA_ASSET_SIGNALS,
+    "uploaded an unsupported image",
+    "unsupported image",
+    "unsupported media format",
+    "unsupported media type",
+    "unsupported image dimensions",
+    "unsupported dimensions",
+    "image is not valid",
+    "image is invalid",
+    "image too large",
+    "image is too large",
+    "image dimensions",
+)
+
+# A payload rejection only counts when the provider actually names the media
+# it refused; "invalid request" alone must keep its existing handling.
+_MEDIA_PAYLOAD_MEDIA_NOUNS = (
+    "image",
+    "audio",
+    "video",
+    "media",
+    "picture",
+    "photo",
+)
+
 
 def _effective_artifact_retention_days(light_context_config: Any) -> int:
     """Return the independently configured tool-result artifact lifetime."""
@@ -319,7 +371,13 @@ class QwenPawAgent(CodingModeMixin, Agent):
             if last_msg is not None and last_msg.role == "assistant":
                 persist_tool_call_extras(last_msg, tool_call_extras)
         if self._context_manager is not None:
-            self._context_manager.on_save(self, block_list)
+            if getattr(self, "_defer_context_save", False):
+                pending = getattr(self, "_pending_context_save", None)
+                if pending is None:
+                    pending = self._pending_context_save = []
+                pending.extend(block_list)
+            else:
+                self._context_manager.on_save(self, block_list)
 
     # Session persistence calls state_dict/load_state_dict on the agent;
     # these round-trip through self.state (AgentState pydantic model).
@@ -992,7 +1050,17 @@ class QwenPawAgent(CodingModeMixin, Agent):
                 self._last_wire_request_had_media()
                 and self._is_explicit_media_capability_error(e)
             )
-            if not (audio_fallback_retry or media_capability_retry):
+            media_payload_retry = (
+                not media_capability_retry
+                and self._uses_request_time_media_normalization()
+                and self._last_wire_request_had_media()
+                and self._is_media_payload_rejection_error(e)
+            )
+            if not (
+                audio_fallback_retry
+                or media_capability_retry
+                or media_payload_retry
+            ):
                 if self._uses_request_time_media_normalization():
                     if should_strip_media:
                         self._set_formatter_media_strip(False)
@@ -1012,6 +1080,15 @@ class QwenPawAgent(CodingModeMixin, Agent):
                     e,
                 )
                 self._set_formatter_audio_strip(True)
+            elif media_payload_retry:
+                logger.warning(
+                    "_reasoning failed because the provider rejected the "
+                    "media payload itself (%s); stripping media from the "
+                    "retry request. Stored history remains unchanged, and "
+                    "no capability loss is cached.",
+                    e,
+                )
+                self._set_formatter_media_strip(True)
             else:
                 logger.warning(
                     "_reasoning failed because the provider explicitly "
@@ -1175,20 +1252,40 @@ class QwenPawAgent(CodingModeMixin, Agent):
         if any(sig in error_str for sig in size_signals):
             return False
 
-        invalid_asset_signals = (
-            "corrupt",
-            "decode",
-            "invalid image",
-            "invalid media",
-            "mime",
-            "unsupported image format",
-        )
-        if any(signal in error_str for signal in invalid_asset_signals):
+        # Asset-level failures describe these bytes, never the model; the
+        # payload classifier below is responsible for recovering from them.
+        if any(signal in error_str for signal in _INVALID_MEDIA_ASSET_SIGNALS):
             return False
 
         return any(
             pattern.search(error_str) is not None
             for pattern in _EXPLICIT_UNSUPPORTED_MEDIA_PATTERNS
+        )
+
+    @staticmethod
+    def _is_media_payload_rejection_error(exc: Exception) -> bool:
+        """Return whether the provider rejected this media payload.
+
+        Covers the request-scoped media limits documented by
+        ``_REQUEST_SCOPED_MEDIA_LIMIT_SIGNALS`` — too many images, a
+        resolution or a video duration the provider refuses — plus
+        asset-level failures: undecodable bytes, an unsupported container,
+        a declared MIME type the provider cannot render. None of them says
+        anything about the model, so recovery is a media-free retry, never
+        a cached model-wide ``rejects_media`` capability loss.
+
+        This matters for session health: the offending block is replayed
+        from history on every later turn, so an unrecovered payload
+        rejection returns the same 400 until the media is repaired in the
+        stored context (see the caller in :meth:`_reasoning`).
+        """
+        error_str = " ".join(str(exc).lower().split())
+        if not any(noun in error_str for noun in _MEDIA_PAYLOAD_MEDIA_NOUNS):
+            return False
+        if QwenPawAgent._is_content_safety_error(exc):
+            return False
+        return any(
+            signal in error_str for signal in _MEDIA_PAYLOAD_REJECTION_SIGNALS
         )
 
     @staticmethod
@@ -1229,10 +1326,17 @@ class QwenPawAgent(CodingModeMixin, Agent):
         for hint in hints:
             self.state.context.append(hint)
 
+    async def _flush_context_save(self) -> None:
+        """Finish deferred history writes before publishing the next event."""
+        pending = getattr(self, "_pending_context_save", None)
+        if pending is not None:
+            self._pending_context_save = None
+            await run_sync_io(self._context_manager.on_save, self, pending)
+
     async def _reply(self, **kwargs: Any) -> Any:
-        """Override kept as extension point; hint injection moved to
-        ``_reasoning`` so each ReAct iteration picks up new hints."""
+        """Drain history writes off the event loop at stream boundaries."""
         stream = super()._reply(**kwargs)
+        self._defer_context_save = True
         try:
             while True:
                 # Heartbeat consumers may resume each event in a new task.
@@ -1245,13 +1349,21 @@ class QwenPawAgent(CodingModeMixin, Agent):
                         evt = await anext(stream)
                     except StopAsyncIteration:
                         return
+                    finally:
+                        await self._flush_context_save()
                 yield evt
         finally:
-            with model_session(
-                self._request_context,
-                self._model_session_id,
-            ):
-                await stream.aclose()
+            try:
+                with model_session(
+                    self._request_context,
+                    self._model_session_id,
+                ):
+                    try:
+                        await stream.aclose()
+                    finally:
+                        await self._flush_context_save()
+            finally:
+                self._defer_context_save = False
 
     def _register_tool_call_hooks(self) -> None:
         """Register per-tool default timeouts on the ToolCoordinator."""

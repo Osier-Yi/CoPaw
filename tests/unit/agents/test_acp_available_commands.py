@@ -542,10 +542,10 @@ async def test_approval_bridge_expires_when_pending_times_out(monkeypatch):
 
 
 async def test_approval_bridge_survives_wait_for_timeout(monkeypatch):
-    """The real timeout path (``wait_for_approval`` → ``asyncio.wait_for``)
-    cancels the shared pending future instead of setting a TIMEOUT result.
-    The bridge must not let that CancelledError escape (it would kill the
-    per-turn approval polling loop) and must still cancel the client prompt.
+    """The service timeout must finish the bridge and cancel its prompt.
+
+    The shared approval future resolves to TIMEOUT, so observers must finish
+    normally and the per-turn approval polling loop must keep running.
     """
     from qwenpaw.app.approvals.service import ApprovalService
     from qwenpaw.security.tool_guard.approval import ApprovalDecision

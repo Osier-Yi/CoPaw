@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ...market.registry import MarketProviderBusyError
 from ..utils import schedule_agent_reload
 from ...installation_origin import read_plugin_origin
 from ...utils.io_utils import run_sync_io
@@ -799,6 +800,8 @@ async def install_plugin(
         raise
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MarketProviderBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (FileNotFoundError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -874,6 +877,8 @@ async def upload_plugin(
         raise
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except MarketProviderBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (FileNotFoundError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -929,6 +934,8 @@ async def uninstall_plugin(plugin_id: str, request: Request):
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except MarketProviderBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(
             f"Plugin uninstall failed for '{_log_safe(plugin_id)}': {exc}",

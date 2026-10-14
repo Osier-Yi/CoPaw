@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import React from "react";
+import { Link } from "react-router-dom";
 import { renderWithProviders } from "@/test/common_setup";
 
 // ---- Hoisted mocks ---------------------------------------------------------
@@ -433,6 +434,47 @@ describe("InboxPage", () => {
     expect(
       (screen.getByTestId("inbox-tab-approvals") as HTMLElement).dataset.active,
     ).toBe("true");
+  });
+
+  it("opens approvals from the notification link over the stored tab", () => {
+    localStorage.setItem("qwenpaw.inbox.activeTab", "messages");
+    makeInboxData([]);
+    mocks.approvals = [{ request_id: "r1" }];
+
+    renderWithProviders(<InboxPage />, {
+      initialEntries: ["/inbox?tab=approvals"],
+    });
+
+    expect(screen.getByTestId("inbox-tab-approvals")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    expect(screen.getByTestId("approval-card-r1")).toBeInTheDocument();
+  });
+
+  it("reopens approvals from a repeated notification link", async () => {
+    makeInboxData([]);
+    mocks.approvals = [{ request_id: "r1" }];
+    renderWithProviders(
+      <>
+        <InboxPage />
+        <Link to="/inbox?tab=approvals">Open pending approvals</Link>
+      </>,
+      { initialEntries: ["/inbox?tab=approvals"] },
+    );
+    fireEvent.click(screen.getByTestId("inbox-tab-messages"));
+    expect(screen.getByTestId("inbox-tab-messages")).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+
+    fireEvent.click(
+      screen.getByRole("link", { name: "Open pending approvals" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("approval-card-r1")).toBeInTheDocument();
+    });
   });
 
   it("switches tabs and writes the choice back to localStorage", async () => {

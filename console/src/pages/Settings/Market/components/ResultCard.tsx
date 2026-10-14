@@ -89,7 +89,9 @@ export const ResultCard = memo(function ResultCard({
             resourceName={item.name}
             variant="inline"
           />
-          <span className={styles.sourceBadge}>{sourceLabel(item.source)}</span>
+          <span className={styles.sourceBadge}>
+            {sourceLabel(item.source, item.source_label)}
+          </span>
         </div>
       </div>
 

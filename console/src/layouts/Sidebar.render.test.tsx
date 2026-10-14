@@ -237,7 +237,12 @@ import Sidebar from "./Sidebar";
 /** Renders the location so navigation can be asserted. */
 function LocationProbe() {
   const location = useLocation();
-  return <div data-testid="probe-path">{location.pathname}</div>;
+  return (
+    <div data-testid="probe-path">
+      {location.pathname}
+      {location.search}
+    </div>
+  );
 }
 
 function renderSidebar(
@@ -807,6 +812,32 @@ describe("Sidebar", () => {
     const inboxSpans = screen.getAllByText("Inbox");
     expect(inboxSpans.length).toBeGreaterThan(0);
   });
+
+  it.each([
+    { collapsed: false, pending: false },
+    { collapsed: false, pending: true },
+    { collapsed: true, pending: false },
+    { collapsed: true, pending: true },
+  ])(
+    "opens the inbox destination (collapsed=$collapsed, pending=$pending)",
+    async ({ collapsed, pending }) => {
+      if (collapsed) {
+        localStorage.setItem("qwenpaw_sidebar_collapsed", "true");
+      }
+      mocks.pushMessages = {
+        pending_approvals: pending ? [{ request_id: "req-1" }] : [],
+      };
+      await act(async () => {
+        renderSidebar();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
+
+      expect(screen.getByTestId("probe-path").textContent).toBe(
+        pending ? "/inbox?tab=approvals" : "/inbox",
+      );
+    },
+  );
 
   // TC-CON-01 checkpoint 3: the collapsed/expanded state must survive a
   // page reload through localStorage.

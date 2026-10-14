@@ -558,6 +558,7 @@ async def post_console_chat(
 async def post_console_chat_stop(
     request: Request,
     chat_id: str = Query(..., description="Chat id (ChatSpec.id) to stop"),
+    cancel_reason: CancelReason = Query(default=CancelReason.USER),
 ) -> dict:
     """Stop the running chat and its foreground tool calls."""
     logger.debug("[STOP API] Received stop request for chat_id=%s", chat_id)
@@ -599,13 +600,16 @@ async def post_console_chat_stop(
         tool_cancelled = await cancel_session(
             runtime_session_id,
             agent_id=workspace.agent_id,
-            reason=CancelReason.USER,
+            reason=cancel_reason,
         )
 
     logger.debug(
         "[STOP API] Got workspace, calling task_tracker.request_stop...",
     )
-    run_stopped = await workspace.task_tracker.request_stop(resolved_chat_id)
+    run_stopped = await workspace.task_tracker.request_stop(
+        resolved_chat_id,
+        reason=cancel_reason.value,
+    )
     stopped = run_stopped or tool_cancelled > 0
 
     logger.debug(

@@ -83,6 +83,41 @@ async def test_stop_uuid_cancels_tools_before_chat_run(
     )
     stop_workspace.task_tracker.request_stop.assert_awaited_once_with(
         "chat-uuid",
+        reason="user",
+    )
+
+
+@pytest.mark.asyncio
+async def test_internal_timeout_stop_preserves_reason(
+    app,
+    stop_workspace,
+    coordinator,
+) -> None:
+    chat = SimpleNamespace(id="chat-uuid", session_id="runtime-session")
+    stop_workspace.chat_manager.get_chat = AsyncMock(return_value=chat)
+    stop_workspace.chat_manager.get_chat_id_by_session = AsyncMock()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/console/chat/stop",
+            params={
+                "chat_id": "chat-uuid",
+                "cancel_reason": "timeout",
+            },
+        )
+
+    assert response.status_code == 200
+    coordinator.cancel_running_for_session.assert_awaited_once_with(
+        "runtime-session",
+        agent_id="agent-a",
+        reason=CancelReason.TIMEOUT,
+    )
+    stop_workspace.task_tracker.request_stop.assert_awaited_once_with(
+        "chat-uuid",
+        reason="timeout",
     )
 
 
@@ -124,6 +159,7 @@ async def test_stop_runtime_session_resolves_uuid_and_reports_tool_stop(
     )
     stop_workspace.task_tracker.request_stop.assert_awaited_once_with(
         "chat-uuid",
+        reason="user",
     )
 
 
@@ -153,4 +189,5 @@ async def test_stop_keeps_backward_compatibility_without_app_services(
     assert response.json() == {"stopped": True}
     stop_workspace.task_tracker.request_stop.assert_awaited_once_with(
         "unknown-chat",
+        reason="user",
     )
