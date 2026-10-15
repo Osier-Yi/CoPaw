@@ -171,7 +171,7 @@ def test_invalid_history_path_falls_back_without_writing_outside_workspace(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     lcc = LightContextConfig()
-    lcc.scroll_config.db_filename = "../outside.db"
+    lcc.scroll_config.db_filename = f"invalid\0.db"
     agent_config = SimpleNamespace(
         running=SimpleNamespace(light_context_config=lcc),
     )

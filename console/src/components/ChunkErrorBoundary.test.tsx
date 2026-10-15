@@ -41,6 +41,7 @@ vi.mock("../utils/chunkServerReadiness", () => ({
 import { hubApi } from "../api/modules/hub";
 import { ChunkErrorBoundary } from "./ChunkErrorBoundary";
 import { ChunkRecoverySuspense } from "./ChunkRecoverySuspense";
+import { waitForChunkServerReady } from "../utils/chunkServerReadiness";
 import {
   getFrontendBuildId,
   reloadAfterChunkError,
@@ -218,6 +219,29 @@ describe("ChunkErrorBoundary runtime recovery", () => {
       attempts: 2,
       maxAttempts: 2,
     });
+  });
+
+  it("offers manual recovery if readiness rejects instead of loading forever", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.mocked(waitForChunkServerReady).mockRejectedValueOnce(
+      new Error("readiness failed"),
+    );
+    const Page = lazyWithRetry(() =>
+      Promise.reject(new TypeError("Importing a module script failed.")),
+    );
+    render(
+      <ChunkErrorBoundary>
+        <Suspense fallback="loading">
+          <Page />
+        </Suspense>
+      </ChunkErrorBoundary>,
+    );
+    await screen.findByText("chunkError.title");
+    expect(screen.queryByText("common.loading")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "chunkError.reload" }),
+    ).toBeVisible();
+    expect(reloadAfterChunkError).not.toHaveBeenCalled();
   });
 
   it("preserves a diagnostic before automatic refresh and includes the earlier report", async () => {

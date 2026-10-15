@@ -17,7 +17,9 @@ from .._utils.constants import (
     PREFIX_WORKSPACES,
 )
 from .._utils.history_sqlite import (
+    archive_history_db_filename,
     configured_history_db_path,
+    history_agent_config_bytes,
     history_sidecar_paths,
 )
 from ...constant import CONFIG_FILE, SECRET_DIR, WORKING_DIR
@@ -29,7 +31,7 @@ class BackupCancelled(Exception):
     """Raised when cooperative cancellation stops archive creation."""
 
 
-def add_agent_workspaces(
+def add_agent_workspaces(  # pylint: disable=too-many-branches
     zf: zipfile.ZipFile,
     valid_agents: list[tuple[str, Any]],
     progress_callback=None,
@@ -68,38 +70,46 @@ def add_agent_workspaces(
             skipped = 0
             history_db = configured_history_db_path(ws)
             sidecars = history_sidecar_paths(history_db)
+            history_filename = archive_history_db_filename(ws, history_db)
             with tempfile.TemporaryDirectory(
                 prefix=f"qwenpaw-history-{aid}-",
             ) as snapshot_dir:
                 history_snapshot = Path(snapshot_dir) / "history.db"
+                if history_db.is_file():
+                    backup_history_database(
+                        history_db,
+                        history_snapshot,
+                        check_cancelled=check_cancelled,
+                    )
+                    zf.write(
+                        history_snapshot,
+                        f"{PREFIX_WORKSPACES}{aid}/{history_filename}",
+                    )
+                    file_count += 1
                 for entry in sorted(ws.rglob("*")):
                     if stop_event and stop_event.is_set():
                         return False
                     resolved_entry = entry.resolve()
-                    if not entry.is_file() or resolved_entry in sidecars:
+                    if (
+                        not entry.is_file()
+                        or resolved_entry in sidecars
+                        or resolved_entry == history_db
+                    ):
                         continue
                     relative = entry.relative_to(ws)
-                    if resolved_entry == history_db:
-                        # SQLite's backup API captures one consistent point
-                        # while the runtime continues writing in WAL mode.
-                        # Failure is fatal: a "successful" instance backup
-                        # must never silently omit durable conversation
-                        # history.
-                        rel = relative.as_posix()
-                        arcname = f"{PREFIX_WORKSPACES}{aid}/{rel}"
-                        if not history_snapshot.exists():
-                            backup_history_database(
-                                entry,
-                                history_snapshot,
-                                check_cancelled=check_cancelled,
-                            )
-                        zf.write(history_snapshot, arcname)
-                        file_count += 1
-                        continue
                     rel = relative.as_posix()
                     arcname = f"{PREFIX_WORKSPACES}{aid}/{rel}"
                     try:
-                        zf.write(entry, arcname)
+                        if rel == f"agent.json":
+                            zf.writestr(
+                                arcname,
+                                history_agent_config_bytes(
+                                    ws,
+                                    history_filename,
+                                ),
+                            )
+                        else:
+                            zf.write(entry, arcname)
                     except (PermissionError, OSError) as exc:
                         # A file that can't be added (e.g. an open Chromium
                         # cache file the backend has locked) must not abort

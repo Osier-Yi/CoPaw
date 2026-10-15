@@ -315,6 +315,10 @@ def _stage_agents(
         staged_workspace = extract_to_tmp(zf, prefix, dst)
         try:
             history_db = configured_history_db_path(staged_workspace)
+            if not history_db.is_relative_to(staged_workspace.resolve()):
+                raise ValueError(
+                    f"Archived history must remain inside the workspace",
+                )
         except ValueError as exc:
             discard_tmp(dst)
             raise BackupValidationError(

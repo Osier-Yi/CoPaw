@@ -78,6 +78,35 @@ afterEach(() => {
 });
 
 describe("page recovery waits for local readiness", () => {
+  it("keeps loading until reload when the failed module rechecks successfully", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith("/assets/failed.js")
+          ? new Response("export default 42;", {
+              headers: { "content-type": "application/javascript" },
+            })
+          : serverResponse(input),
+      ),
+    );
+    await act(async () => {
+      render(
+        <ChunkErrorBoundary>
+          <FailedPage />
+        </ChunkErrorBoundary>,
+      );
+    });
+    expect(screen.getByText("common.loading")).toBeVisible();
+    expect(screen.queryByText("chunkError.title")).not.toBeInTheDocument();
+    expect(readChunkDiagnostic()).toMatchObject({
+      recheck: { outcome: "available", status: 200 },
+    });
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(reloadAfterChunkError).toHaveBeenCalledOnce();
+    expect(screen.getByText("common.loading")).toBeVisible();
+    expect(screen.queryByText("chunkError.title")).not.toBeInTheDocument();
+  });
+
   it("invalidates an unfinished resource recheck when a runtime restart fails", async () => {
     let finish!: (response: Response) => void;
     vi.stubGlobal(
@@ -138,6 +167,8 @@ describe("page recovery waits for local readiness", () => {
     });
     expect(reloadAfterChunkError).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(reloadKey)).toBe(guard);
+    expect(screen.getByText("common.loading")).toBeVisible();
+    expect(screen.queryByText("chunkError.title")).not.toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3999);
     });
@@ -146,6 +177,7 @@ describe("page recovery waits for local readiness", () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(reloadAfterChunkError).toHaveBeenCalledOnce();
+    expect(screen.queryByText("chunkError.title")).not.toBeInTheDocument();
     expect(readChunkDiagnostic()).toMatchObject({
       recheck: { outcome: "request-failed" },
       serverReadiness: {
@@ -173,6 +205,8 @@ describe("page recovery waits for local readiness", () => {
     });
     expect(reloadAfterChunkError).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(reloadKey)).toBe(guard);
+    expect(screen.queryByText("common.loading")).not.toBeInTheDocument();
+    expect(screen.getByText("chunkError.title")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "chunkError.reload" }),
     ).toBeVisible();
@@ -258,5 +292,7 @@ describe("page recovery waits for local readiness", () => {
       serverReadiness: { outcome: "ready" },
     });
     expect(sessionStorage.getItem(reloadKey)).toBe(guard);
+    expect(screen.queryByText("common.loading")).not.toBeInTheDocument();
+    expect(screen.getByText("chunkError.title")).toBeVisible();
   });
 });

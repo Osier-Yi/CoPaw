@@ -36,12 +36,11 @@ def test_workspace_backup_uses_verified_history_snapshot(
     tmp_path: Path,
 ) -> None:
     workspace = tmp_path / "workspace"
-    db_path = workspace / "state" / "events.db"
+    db_path = tmp_path / f"external.db"
     workspace.mkdir()
-    (workspace / "agent.json").write_text(
-        _agent_json("state/events.db"),
-        encoding="utf-8",
-    )
+    live_config = _agent_json(str(db_path))
+    (workspace / f"agent.json").write_text(live_config, encoding=f"utf-8")
+    (workspace / f"history.db").write_bytes(b"unrelated file")
     store = HistoryStore(db_path)
     store.append(
         session_id="session",
@@ -72,12 +71,39 @@ def test_workspace_backup_uses_verified_history_snapshot(
 
     with zipfile.ZipFile(archive_path, "r") as zf:
         names = set(zf.namelist())
-        db_entry = "data/workspaces/agent/state/events.db"
+        db_entry = f"data/workspaces/agent/history-1.db"
+        archived_config = json.loads(
+            zf.read(f"data/workspaces/agent/agent.json"),
+        )
+        assert (
+            archived_config[f"running"][f"light_context_config"][
+                f"scroll_config"
+            ][f"db_filename"]
+            == f"history-1.db"
+        )
+        assert (workspace / f"agent.json").read_text(
+            encoding=f"utf-8",
+        ) == live_config
+        assert (
+            zf.read(f"data/workspaces/agent/history.db") == b"unrelated file"
+        )
+        destination = tmp_path / f"restored-workspace"
+        restore._stage_agents(
+            zf,
+            [f"agent"],
+            {f"agent"},
+            {f"agent": (destination, True)},
+            [],
+            {},
+            [],
+        )
         assert db_entry in names
         assert db_entry + "-wal" not in names
         assert db_entry + "-shm" not in names
-        restored = tmp_path / "restored.db"
-        restored.write_bytes(zf.read(db_entry))
+        restored = (
+            destination.with_name(f"{destination.name}.restore_tmp")
+            / f"history-1.db"
+        )
 
     conn = sqlite3.connect(restored)
     try:
@@ -105,29 +131,6 @@ def test_workspace_backup_fails_when_history_is_invalid(
 
     with zipfile.ZipFile(io.BytesIO(), "w") as zf:
         with pytest.raises(sqlite3.DatabaseError):
-            add_agent_workspaces(
-                zf,
-                [
-                    (
-                        "agent",
-                        SimpleNamespace(workspace_dir=str(workspace)),
-                    ),
-                ],
-            )
-
-
-def test_workspace_backup_rejects_history_path_escape(
-    tmp_path: Path,
-) -> None:
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    (workspace / "agent.json").write_text(
-        _agent_json("../history.db"),
-        encoding="utf-8",
-    )
-
-    with zipfile.ZipFile(io.BytesIO(), "w") as zf:
-        with pytest.raises(ValueError, match="workspace"):
             add_agent_workspaces(
                 zf,
                 [

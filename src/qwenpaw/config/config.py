@@ -1217,22 +1217,24 @@ class ScrollContextConfig(BaseModel):
     """Scroll (retrieval-driven) context manager configuration.
 
     Only consulted when ``LightContextConfig.strategy == "scroll"``. The
-    durable history lives at ``{working_dir}/{db_filename}``; evicted turns
-    fold into an in-context eviction index recallable from the sandboxed
-    ``recall_history_python`` REPL.
+    durable history uses ``db_filename`` (relative to the workspace unless
+    absolute). Evicted turns fold into an in-context eviction index,
+    recallable from the sandboxed ``recall_history_python`` REPL.
     """
 
     model_config = ConfigDict(extra="ignore")
 
     db_filename: str = Field(
         default="history.db",
-        description="SQLite history store filename, relative to working_dir.",
+        description=(
+            f"SQLite history path, absolute or relative to the workspace."
+        ),
     )
 
     @field_validator("db_filename")
     @classmethod
     def validate_db_filename(cls, value: str) -> str:
-        """Keep durable history inside its agent workspace."""
+        """Normalize the configured durable history filename."""
         return normalize_history_db_filename(value)
 
     tool_output_token_cap: int = Field(

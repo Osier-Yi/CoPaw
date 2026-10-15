@@ -1096,7 +1096,7 @@ def test_invalid_history_path_does_not_block_other_agents(
                 light_context_config=SimpleNamespace(
                     strategy="scroll",
                     scroll_config=SimpleNamespace(
-                        db_filename="../outside.db",
+                        db_filename=f"invalid\0.db",
                         history_retention_days=0,
                     ),
                 ),
