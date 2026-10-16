@@ -3042,6 +3042,9 @@
     "sourceControl": "Source control",
     "preview": "Preview",
     "htmlPreview": "HTML preview",
+    "htmlReadOnlyTitle": "This page includes dynamic content",
+    "htmlReadOnlyNotice": "Dynamic content isn't available in this read-only preview. Open the file in your browser to view the full experience.",
+    "htmlReadOnlyNotice_fallback": "Click the button below to open the page in your browser for the full experience.",
     "openHtmlInBrowser": "Open in browser",
     "edit": "Edit",
     "selectFile": "Select a file to open",
@@ -3831,6 +3834,8 @@
     "webSearchApiKeyLabel": "API Key (optional)",
     "webSearchQuotaHintBefore": "Free: 100 calls/day. Register at ",
     "webSearchQuotaHintAfter": " for 1,000/day.",
+    "webSearchTavilyKeyHintBefore": "Optional. If unconfigured or authentication fails, free search will be used. Get a key at ",
+    "webSearchTavilyKeyHintAfter": ".",
     "active": "active",
     "available": "Available",
     "noEnabled": "No tools enabled",
@@ -3983,7 +3988,8 @@
     "filterAll": "All tools",
     "filterEnabled": "Enabled",
     "filterDisabled": "Disabled",
-    "enabledCount": "{{enabled}} / {{total}} enabled"
+    "enabledCount": "{{enabled}} / {{total}} enabled",
+    "webSearchConfigLoadError": "Failed to load this provider's credentials. Retry before saving."
   },
   "modelConfig": {
     "promptTitle": "LLM Model Required — Select in Chat After Configuration",

@@ -2304,6 +2304,11 @@
     "noSystemPromptCandidates": "一致するファイルはありません。",
     "sourceControl": "ソース管理",
     "preview": "プレビュー",
+    "htmlPreview": "HTML プレビュー",
+    "htmlReadOnlyTitle": "このページには動的なコンテンツが含まれています",
+    "htmlReadOnlyNotice": "この読み取り専用プレビューでは動的なコンテンツを表示できません。すべての機能を利用するには、ブラウザーでファイルを開いてください。",
+    "htmlReadOnlyNotice_fallback": "下のボタンをクリックしてブラウザーでページを開くと、本来の表示と動作を確認できます。",
+    "openHtmlInBrowser": "ブラウザーで開く",
     "edit": "編集",
     "selectFile": "開くファイルを選択",
     "closeTab": "タブを閉じる",
@@ -2917,6 +2922,8 @@
     "webSearchApiKeyLabel": "APIキー（任意）",
     "webSearchQuotaHintBefore": "未登録時は1日100回まで。",
     "webSearchQuotaHintAfter": "で登録すると1日1,000回無料に。",
+    "webSearchTavilyKeyHintBefore": "任意。未設定または認証に失敗した場合は無料検索を使用します。キーは ",
+    "webSearchTavilyKeyHintAfter": " で取得。",
     "active": "個が有効",
     "available": "利用可能",
     "noEnabled": "有効なツールはありません",
@@ -3072,7 +3079,8 @@
       "runtime": "実行と自動化",
       "migration": "アプリの移行",
       "other": "未分類"
-    }
+    },
+    "webSearchConfigLoadError": "このプロバイダーの認証情報を読み込めませんでした。保存前に再試行してください。"
   },
   "modelConfig": {
     "promptTitle": "LLMモデルが必要です — 設定後にChatページで選択",

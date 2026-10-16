@@ -1923,6 +1923,8 @@
     "webSearchApiKeyLabel": "Khóa API (tùy chọn)",
     "webSearchQuotaHintBefore": "Miễn phí 100 lần gọi/ngày. Đăng ký tại ",
     "webSearchQuotaHintAfter": " để nhận 1.000 lần/ngày.",
+    "webSearchTavilyKeyHintBefore": "Tùy chọn. Nếu chưa cấu hình hoặc xác thực thất bại, sẽ dùng tìm kiếm miễn phí. Lấy khóa tại ",
+    "webSearchTavilyKeyHintAfter": ".",
     "active": "đang hoạt động",
     "available": "Có sẵn",
     "noEnabled": "Không có công cụ nào được bật",
@@ -2078,7 +2080,8 @@
       "runtime": "Thực thi và tự động hóa",
       "migration": "Di chuyển ứng dụng",
       "other": "Chưa phân loại"
-    }
+    },
+    "webSearchConfigLoadError": "Không tải được thông tin xác thực của nhà cung cấp này. Thử lại trước khi lưu."
   },
   "mcp": {
     "title": "MCP Client",
@@ -2389,6 +2392,11 @@
     "noSystemPromptCandidates": "Không có tệp phù hợp.",
     "sourceControl": "Quản lý mã nguồn",
     "preview": "Preview",
+    "htmlPreview": "Xem trước HTML",
+    "htmlReadOnlyTitle": "Trang này có nội dung động",
+    "htmlReadOnlyNotice": "Không thể hiển thị nội dung động trong bản xem trước chỉ đọc này. Hãy mở tệp trong trình duyệt để có trải nghiệm đầy đủ.",
+    "htmlReadOnlyNotice_fallback": "Nhấp vào nút bên dưới để mở trang trong trình duyệt và trải nghiệm đầy đủ các tính năng.",
+    "openHtmlInBrowser": "Mở trong trình duyệt",
     "edit": "Chỉnh sửa",
     "selectFile": "Chọn tệp để mở",
     "closeTab": "Đóng tab",

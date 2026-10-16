@@ -2902,6 +2902,9 @@
     "sourceControl": "源码管理",
     "preview": "预览",
     "htmlPreview": "HTML 预览",
+    "htmlReadOnlyTitle": "此页面包含动态内容",
+    "htmlReadOnlyNotice": "动态内容无法在只读预览中展示。请在浏览器中打开，查看完整效果。",
+    "htmlReadOnlyNotice_fallback": "点击下方按钮，在浏览器中打开页面，查看完整效果。",
     "openHtmlInBrowser": "在浏览器中打开",
     "edit": "编辑",
     "selectFile": "选择文件以打开",
@@ -3691,6 +3694,8 @@
     "webSearchApiKeyLabel": "API 密钥（可选）",
     "webSearchQuotaHintBefore": "未注册每日限 100 次，前往 ",
     "webSearchQuotaHintAfter": " 注册可享每日 1000 次免费额度。",
+    "webSearchTavilyKeyHintBefore": "可选。未配置或鉴权失败时将使用免费搜索。前往 ",
+    "webSearchTavilyKeyHintAfter": " 获取密钥。",
     "active": "个已激活",
     "available": "可用",
     "noEnabled": "暂无已启用的工具",
@@ -3843,7 +3848,8 @@
     "filterAll": "全部工具",
     "filterEnabled": "已启用",
     "filterDisabled": "未启用",
-    "enabledCount": "已启用 {{enabled}} / {{total}}"
+    "enabledCount": "已启用 {{enabled}} / {{total}}",
+    "webSearchConfigLoadError": "无法加载该搜索提供商的凭证，请重试后再保存。"
   },
   "modelConfig": {
     "promptTitle": "需要配置 LLM 模型，配置模型后在 Chat 页面选择",
