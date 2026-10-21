@@ -259,6 +259,28 @@
   font-size: 14px;
   resize: none;
 }
+// Body editor card wraps the markdown toolbar and the textarea in one
+// bordered box, mirroring the answer composer layout.
+.bodyEditorCard {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface);
+  overflow: hidden;
+  transition: border-color 0.2s;
+
+  &:focus-within {
+    border-color: var(--app-accent);
+  }
+
+  // The inner textarea gives up its own chrome to the card.
+  .bodyInput {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 12px 14px;
+  }
+}
 .editorHint {
   display: flex;
   flex-wrap: wrap;
@@ -869,12 +891,33 @@
   max-width: 1000px;
   margin: 0 auto;
   padding: 24px;
-  h1 {
-    font-size: 24px;
-    margin: 20px 0 8px;
-  }
   > .hint {
     margin-bottom: 24px;
+  }
+}
+// Drafts header mirrors the composer page header: arrow back button and
+// title share one row above the hint text.
+.draftHeader {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding-bottom: 16px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--app-border);
+  h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  :global(.ant-btn) {
+    color: var(--app-text);
+  }
+  @media (max-width: 600px) {
+    gap: 12px;
+    h1 {
+      font-size: 16px;
+    }
   }
 }
 .draftCard {

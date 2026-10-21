@@ -1,16 +1,16 @@
 import { useMemo, useState } from "react";
-import DOMPurify from "dompurify";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
 import { openExternalLink } from "@/utils/openExternalLink";
 import type { Post } from "./api";
+import { assignHeadingIds, sanitizeArticleHtml } from "./articleToc";
+import { ImageLightbox } from "./ImageLightbox";
 import { mediaUrl, videoUrl } from "./media";
 import styles from "./index.module.less";
 
-function Video({ src, label }: { src: string; label?: string }) {
+export function Video({ src, label }: { src: string; label?: string }) {
   const { t } = useTranslation();
-  const [failed, setFailed] = useState(false);
   return (
     <span className={styles.videoBlock}>
       <video
@@ -19,17 +19,32 @@ function Video({ src, label }: { src: string; label?: string }) {
         playsInline
         preload="metadata"
         aria-label={label || t("communityPage.video")}
-        onError={() => setFailed(true)}
       />
-      <span className={styles.mediaCaption}>
-        {failed && <span>{t("communityPage.videoFailed")} </span>}
-        <CommunityAnchor href={src}>
-          {t("communityPage.openVideo")}
-        </CommunityAnchor>
-      </span>
     </span>
   );
 }
+
+/** Markdown renderers that play video URLs inline; shared by every draft
+ *  preview so uploaded videos render as players instead of broken images. */
+export const videoMarkdownComponents = {
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+    const src = videoUrl(href);
+    return src ? (
+      <Video src={src} />
+    ) : (
+      <CommunityAnchor href={href}>{children}</CommunityAnchor>
+    );
+  },
+  img: ({ src, alt }: { src?: string; alt?: string }) => {
+    const url = videoUrl(src);
+    return url ? (
+      <Video src={url} label={alt} />
+    ) : (
+      <img src={mediaUrl(src)} alt={alt || ""} loading="lazy" />
+    );
+  },
+};
+
 export function CommunityAnchor({
   href,
   children,
@@ -54,13 +69,30 @@ export function CommunityAnchor({
 
 export function PostBody({ post }: { post: Post }) {
   const { t } = useTranslation();
+  const [preview, setPreview] = useState<{ src: string; alt: string } | null>(
+    null,
+  );
+  const handleBodyClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as Element;
+    // Body images open the fullscreen lightbox instead of navigating.
+    if (target instanceof HTMLImageElement) {
+      const src = target.currentSrc || target.src;
+      if (!src) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPreview({ src, alt: target.alt || "" });
+      return;
+    }
+    const link = target.closest("a");
+    const href = link?.getAttribute("href");
+    if (!href || href.startsWith("#")) return;
+    event.preventDefault();
+    const url = mediaUrl(href);
+    if (url) openExternalLink(url);
+  };
   const html = useMemo(() => {
     const root = document.createElement("div");
-    root.innerHTML = DOMPurify.sanitize(post.body_html || "", {
-      USE_PROFILES: { html: true },
-      FORBID_TAGS: ["style", "form", "input", "button", "iframe", "audio"],
-      FORBID_ATTR: ["style", "id", "name", "srcset", "autoplay", "loop"],
-    });
+    root.innerHTML = sanitizeArticleHtml(post.body_html || "");
     // Platform stores uploaded videos both as video tags and image/link nodes.
     root.querySelectorAll("a[href],img[src]").forEach((node) => {
       const src = videoUrl(
@@ -90,48 +122,74 @@ export function PostBody({ post }: { post: Post }) {
       video.playsInline = true;
       video.preload = "metadata";
       video.setAttribute("aria-label", t("communityPage.video"));
-      const fallback = document.createElement("a");
-      fallback.href = safeSrc;
-      fallback.textContent = t("communityPage.openVideo");
-      fallback.className = styles.mediaCaption;
-      video.after(fallback);
     });
+    // Wide tables scroll horizontally inside a wrapper like the platform body.
+    root.querySelectorAll("table").forEach((table) => {
+      if (table.closest(`.${styles.tableWrap}`)) return;
+      const wrap = document.createElement("div");
+      wrap.className = styles.tableWrap;
+      table.replaceWith(wrap);
+      wrap.appendChild(table);
+    });
+    assignHeadingIds(root);
     return root.innerHTML;
   }, [post.body_html, t]);
-  return html ? (
-    <div
-      className={styles.body}
-      dangerouslySetInnerHTML={{ __html: html }}
-      onClick={(event) => {
-        const link = (event.target as Element).closest("a");
-        const href = link?.getAttribute("href");
-        if (!href || href.startsWith("#")) return;
-        event.preventDefault();
-        const url = mediaUrl(href);
-        if (url) openExternalLink(url);
-      }}
-    />
-  ) : (
-    <div className={styles.body}>
+  return (
+    <>
+      {html ? (
+        <div
+          className={styles.body}
+          dangerouslySetInnerHTML={{ __html: html }}
+          onClick={handleBodyClick}
+        />
+      ) : (
+        <MarkdownFallback post={post} onBodyClick={handleBodyClick} />
+      )}
+      <ImageLightbox
+        src={preview?.src ?? null}
+        alt={preview?.alt ?? ""}
+        onClose={() => setPreview(null)}
+      />
+    </>
+  );
+}
+
+/** Markdown fallback; heading ids follow render order like parseMarkdownToc. */
+function MarkdownFallback({
+  post,
+  onBodyClick,
+}: {
+  post: Post;
+  onBodyClick: React.MouseEventHandler<HTMLDivElement>;
+}) {
+  const counter = { index: 0 };
+  const heading = (level: number) => {
+    const Tag = `h${level}` as React.ElementType;
+    return function MarkdownHeading({
+      children,
+    }: {
+      children?: React.ReactNode;
+    }) {
+      return <Tag id={`md-heading-${counter.index++}`}>{children}</Tag>;
+    };
+  };
+  return (
+    <div className={styles.body} onClick={onBodyClick}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a: ({ href, children }) => {
-            const src = videoUrl(href);
-            return src ? (
-              <Video src={src} />
-            ) : (
-              <CommunityAnchor href={href}>{children}</CommunityAnchor>
-            );
-          },
-          img: ({ src, alt }) => {
-            const url = videoUrl(src);
-            return url ? (
-              <Video src={url} label={alt} />
-            ) : (
-              <img src={mediaUrl(src)} alt={alt || ""} loading="lazy" />
-            );
-          },
+          ...videoMarkdownComponents,
+          table: ({ children }) => (
+            <div className={styles.tableWrap}>
+              <table>{children}</table>
+            </div>
+          ),
+          h1: heading(1),
+          h2: heading(2),
+          h3: heading(3),
+          h4: heading(4),
+          h5: heading(5),
+          h6: heading(6),
         }}
       >
         {post.body_text || post.summary || ""}

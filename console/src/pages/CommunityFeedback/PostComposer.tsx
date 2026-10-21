@@ -16,6 +16,7 @@ import {
   Segmented,
   Tag,
   Spin,
+  message,
 } from "antd";
 import {
   ArrowLeft,
@@ -27,11 +28,18 @@ import {
   Plus,
   Link2,
   ChevronDown,
+  Video,
 } from "lucide-react";
 import { useReportScreenshots } from "./useReportScreenshots";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
-import { externalLinkMarkdownComponents } from "@/components/Markdown/externalLinkComponents";
+import {
+  applyMarkdownAction,
+  type MarkdownToolbarAction,
+} from "@/pages/Market/Community/markdownToolbar";
+import { useMarkdownToolbarItems } from "@/pages/Market/Community/MarkdownComposer";
+import { videoMarkdownComponents } from "@/pages/Market/Community/PostBody";
+import communityStyles from "@/pages/Market/Community/index.module.less";
 import {
   type ReportResource,
   reportResourceKey,
@@ -62,7 +70,20 @@ import {
   openAuthorizationUrl,
 } from "@/utils/communityAuthorization";
 import { communityErrorKey } from "@/utils/communityError";
+import { communityMediaApi } from "@/pages/Market/Community/api";
 import type { InstallationOrigin } from "@/api/types/community";
+
+/** Mirror the platform body-video cap / acceptance list (uploadEditorImage). */
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+const ACCEPT_VIDEO_EXTENSIONS = /\.(mp4|webm|mov|m4v|avi|mkv|wmv)$/i;
+/** Mirror the platform image cap / acceptance list (uploadEditorImage). */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const ACCEPT_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+];
 
 function ComposerFrame({
   page,
@@ -125,6 +146,7 @@ export function PostComposer({
   draftId,
   initialBody = "",
   initialType = "question",
+  initialArticleType,
   origin,
   resourceName,
 }: {
@@ -133,6 +155,7 @@ export function PostComposer({
   draftId?: string;
   initialBody?: string;
   initialType?: "question" | "discussion";
+  initialArticleType?: string;
   origin?: InstallationOrigin;
   resourceName?: string;
 }) {
@@ -142,7 +165,7 @@ export function PostComposer({
     initialBody.match(/^#\s+(.+)/)?.[1]?.slice(0, 256) || "",
   );
   const [content, setContent] = useState(initialBody);
-  const [type, setType] = useState<string>(initialType);
+  const [type, setType] = useState<string>(initialArticleType || initialType);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -162,6 +185,14 @@ export function PostComposer({
   const [assistWidth, setAssistWidth] = useState(35);
   const [mobilePane, setMobilePane] = useState("write");
   const [preview, setPreview] = useState(false);
+  const [videoBusy, setVideoBusy] = useState(false);
+  const [imageBusy, setImageBusy] = useState(false);
+  const videoInput = useRef<HTMLInputElement | null>(null);
+  const imageInput = useRef<HTMLInputElement | null>(null);
+  const bodyEditor = useRef<{
+    resizableTextArea?: { textArea?: HTMLTextAreaElement };
+  } | null>(null);
+  const bodyToolbarItems = useMarkdownToolbarItems();
   const [catalog, setCatalog] = useState<ReportResource[]>([]);
   const [resources, setResources] = useState<ReportResource[]>(
     origin ? [{ origin, name: resourceName || origin.resource_id }] : [],
@@ -189,7 +220,11 @@ export function PostComposer({
       ? writingSessionKey(
           status.account.id,
           `${draftId || "new"}:${
-            origin ? reportResourceKey(origin) : `general:${initialType}`
+            origin
+              ? reportResourceKey(origin)
+              : // Separate session per board entry so a draft saved under one
+                // board never leaks into another entry's board selection.
+                `general:${initialType}:${initialArticleType || ""}`
           }`,
         )
       : "";
@@ -219,7 +254,7 @@ export function PostComposer({
     setError(undefined);
     setTitle(initialBody.match(/^#\s+(.+)/)?.[1]?.slice(0, 256) || "");
     setContent(initialBody);
-    setType(initialType);
+    setType(initialArticleType || initialType);
     setInstructions("");
     setMedia([]);
     setResources(
@@ -245,12 +280,16 @@ export function PostComposer({
         if (saved) {
           setTitle(saved.title);
           setContent(saved.content);
-          setType(saved.type);
+          // An explicit board from the entry point wins over the restored
+          // draft so the board always mirrors the jump type.
+          setType(initialArticleType || saved.type);
           setResources(saved.resources);
           setInstructions(saved.instructions || "");
           setMedia(saved.media || []);
           if (saved.id) setSavedKind(saved.type);
-          if (saved.type !== "question") articleBoard.current = saved.type;
+          if ((initialArticleType || saved.type) !== "question") {
+            articleBoard.current = initialArticleType || saved.type;
+          }
         }
         if (local) {
           setAssisting(local.assisting);
@@ -436,6 +475,114 @@ export function PostComposer({
   useEffect(() => {
     setSaveNotice("");
   }, [title, content, type, resources, instructions, media]);
+  // Shared caret insertion for uploaded media snippets (video / image).
+  const insertSnippetAtCaret = (snippet: string) => {
+    const textarea = bodyEditor.current?.resizableTextArea?.textArea;
+    const start = textarea?.selectionStart ?? content.length;
+    const end = textarea?.selectionEnd ?? content.length;
+    setContent(`${content.slice(0, start)}${snippet}${content.slice(end)}`);
+    setConfirmed(false);
+    requestAnimationFrame(() => {
+      const el = bodyEditor.current?.resizableTextArea?.textArea;
+      if (!el) return;
+      el.focus();
+      const caret = start + snippet.length;
+      el.setSelectionRange(caret, caret);
+    });
+  };
+
+  // Body video upload mirrors the platform editor: validate locally, upload
+  // with purpose=body, then embed the media URL as markdown image syntax —
+  // both body render channels turn video URLs back into playable <video>.
+  const uploadVideo = async (file: File) => {
+    if (status?.status !== "connected" || !status.account || videoBusy) return;
+    if (file.size > MAX_VIDEO_BYTES) {
+      message.error(t("communityCompose.videoTooLarge"));
+      return;
+    }
+    const typeOk = file.type
+      ? file.type.startsWith("video/")
+      : ACCEPT_VIDEO_EXTENSIONS.test(file.name);
+    if (!typeOk) {
+      message.error(t("communityCompose.videoTypeInvalid"));
+      return;
+    }
+    setVideoBusy(true);
+    try {
+      const item = await communityMediaApi.upload(
+        file,
+        status.account.id,
+        "body",
+      );
+      setMedia((prev) => [...prev, item]);
+      insertSnippetAtCaret(`![${file.name}](${item.url})`);
+    } catch (error) {
+      message.error(
+        error instanceof Error
+          ? error.message
+          : t("communityCompose.videoUploadFailed"),
+      );
+    } finally {
+      setVideoBusy(false);
+    }
+  };
+
+  // Body image upload mirrors the platform editor: validate locally, upload
+  // with purpose=body, then embed the returned URL at the caret so both the
+  // preview and the published body render it inline.
+  const uploadImage = async (file: File) => {
+    if (status?.status !== "connected" || !status.account || imageBusy) return;
+    if (file.size > MAX_IMAGE_BYTES) {
+      message.error(t("communityPage.imageTooLarge"));
+      return;
+    }
+    if (file.type && !ACCEPT_IMAGE_TYPES.includes(file.type)) {
+      message.error(t("communityPage.imageTypeInvalid"));
+      return;
+    }
+    setImageBusy(true);
+    try {
+      const item = await communityMediaApi.upload(
+        file,
+        status.account.id,
+        "body",
+      );
+      setMedia((prev) => [...prev, item]);
+      insertSnippetAtCaret(`![${file.name}](${item.url})`);
+    } catch (error) {
+      message.error(
+        error instanceof Error
+          ? error.message
+          : t("communityPage.imageUploadFailed"),
+      );
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  // Markdown quick actions mirror the answer editor toolbar: apply to the
+  // body selection and restore the caret afterwards.
+  const applyBodyMarkdown = (action: MarkdownToolbarAction) => {
+    const textarea = bodyEditor.current?.resizableTextArea?.textArea;
+    const start = textarea?.selectionStart ?? content.length;
+    const end = textarea?.selectionEnd ?? content.length;
+    const { nextValue, selectionStart, selectionEnd } = applyMarkdownAction(
+      content,
+      start,
+      end,
+      action,
+    );
+    if (nextValue.length > 65536) return;
+    setContent(nextValue);
+    setConfirmed(false);
+    requestAnimationFrame(() => {
+      const el = bodyEditor.current?.resizableTextArea?.textArea;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(selectionStart, selectionEnd);
+    });
+  };
+
   const publish = async () => {
     if (
       status?.status !== "connected" ||
@@ -895,30 +1042,94 @@ export function PostComposer({
                   </div>
                   {preview ? (
                     <div className={styles.preview}>
-                      <ReactMarkdown
-                        components={externalLinkMarkdownComponents}
-                      >
+                      <ReactMarkdown components={videoMarkdownComponents}>
                         {content || t("communityAssist.emptyPreview")}
                       </ReactMarkdown>
                     </div>
                   ) : (
-                    <Input.TextArea
-                      placeholder={t(
-                        type === "question"
-                          ? "communityAssist.questionPlaceholder"
-                          : "communityAssist.articlePlaceholder",
-                      )}
-                      id="community-post-body"
-                      value={content}
-                      maxLength={65536}
-                      className={styles.bodyInput}
-                      autoSize={{ minRows: 9, maxRows: 16 }}
-                      disabled={locked}
-                      onChange={(event) => {
-                        setContent(event.target.value);
-                        setConfirmed(false);
-                      }}
-                    />
+                    <>
+                      <div className={styles.bodyEditorCard}>
+                        <div className={communityStyles.composerToolbar}>
+                          <div className={communityStyles.toolbarGroup}>
+                            {bodyToolbarItems.map((item) => (
+                              <button
+                                key={item.action}
+                                type="button"
+                                title={item.label}
+                                aria-label={item.label}
+                                disabled={
+                                  item.action === "image"
+                                    ? locked || imageBusy
+                                    : locked
+                                }
+                                className={communityStyles.toolbarBtn}
+                                // Keep the body selection alive while clicking.
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() =>
+                                  item.action === "image"
+                                    ? imageInput.current?.click()
+                                    : applyBodyMarkdown(item.action)
+                                }
+                              >
+                                {item.icon}
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              className={communityStyles.toolbarBtn}
+                              title={t("communityCompose.videoUpload")}
+                              aria-label={t("communityCompose.videoUpload")}
+                              disabled={locked || videoBusy}
+                              onClick={() => videoInput.current?.click()}
+                            >
+                              <Video size={15} aria-hidden="true" />
+                            </button>
+                            <input
+                              ref={videoInput}
+                              type="file"
+                              accept="video/*"
+                              style={{ display: "none" }}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = "";
+                                if (file) void uploadVideo(file);
+                              }}
+                            />
+                            <input
+                              ref={imageInput}
+                              type="file"
+                              accept="image/jpeg,image/png,image/gif,image/webp"
+                              style={{ display: "none" }}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = "";
+                                if (file) void uploadImage(file);
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <Input.TextArea
+                          ref={(node) => {
+                            bodyEditor.current = node;
+                          }}
+                          placeholder={t(
+                            type === "question"
+                              ? "communityAssist.questionPlaceholder"
+                              : "communityAssist.articlePlaceholder",
+                          )}
+                          id="community-post-body"
+                          value={content}
+                          maxLength={65536}
+                          className={styles.bodyInput}
+                          autoSize={{ minRows: 9, maxRows: 16 }}
+                          disabled={locked}
+                          onChange={(event) => {
+                            setContent(event.target.value);
+                            setConfirmed(false);
+                          }}
+                        />
+                      </div>
+                    </>
                   )}
                   <div className={styles.editorHint}>
                     <span>{t("communityAssist.editorHint")}</span>
@@ -1019,7 +1230,7 @@ export function PostComposer({
                       const result = await request<{
                         url: string;
                         media_id: string;
-                      }>("/community/media", {
+                      }>("/community/media/screenshot", {
                         method: "POST",
                         body: JSON.stringify({
                           data_url: image,
