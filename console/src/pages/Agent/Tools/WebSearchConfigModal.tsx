@@ -1,7 +1,7 @@
 import { SharedModal as Modal } from "@/components/interaction/SharedModal";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X, ChevronDown } from "lucide-react";
+import { X, ChevronDown, CircleAlert } from "lucide-react";
 import { Alert, Button, Spin, Typography } from "antd";
 import { Form, Input, Select } from "@agentscope-ai/design";
 import api from "../../../api";
@@ -116,15 +116,8 @@ export function WebSearchConfigModal({
   useEffect(() => {
     if (!visible) return;
     if (!providerValue) return;
-    // Initial open owns the first fetch (provider still unknown).
-    if (loadState.status === "loading" && loadState.provider === null) {
-      return;
-    }
-    // Initial-load failure: wait for explicit retry of the saved-config
-    // request; do not treat the form default as a provider switch.
-    if (loadState.status === "error" && loadState.provider === null) {
-      return;
-    }
+    // Initial loading/retry owns provider selection until config is loaded.
+    if (loadState.provider === null) return;
     // Already loading / ready / error for this provider — no auto-refetch
     // (error waits for explicit retry).
     if (loadState.provider === providerValue) return;
@@ -132,11 +125,9 @@ export function WebSearchConfigModal({
   }, [visible, providerValue, loadState, loadForProvider]);
 
   const canSubmit =
-    loadState.status === "ready" &&
-    loadState.provider !== null &&
-    loadState.provider === providerValue;
+    loadState.status === "ready" && loadState.provider === providerValue;
 
-  const { schedule, flush } = useAutoSave(async () => {
+  const { schedule, discard, requestClose } = useAutoSave(async () => {
     if (!canSubmit) return false;
     const values = form.getFieldsValue(true);
     try {
@@ -168,12 +159,11 @@ export function WebSearchConfigModal({
         // Unsafe to save while loading/error or when the loaded slot
         // does not match the selected provider — discard and close.
         if (!canSubmit) {
+          discard();
           onClose();
           return;
         }
-        void flush().then((saved) => {
-          if (saved) onClose();
-        });
+        void requestClose(onClose);
       }}
       footer={null}
     >
@@ -190,6 +180,7 @@ export function WebSearchConfigModal({
             >
               <Select.Option value="tavily">tavily</Select.Option>
               <Select.Option value="anysearch">anysearch</Select.Option>
+              <Select.Option value="firecrawl">firecrawl</Select.Option>
             </Select>
           </Form.Item>
           <Form.Item name="api_key" label={t("tools.webSearchApiKeyLabel")}>
@@ -202,6 +193,7 @@ export function WebSearchConfigModal({
             <Alert
               type="error"
               showIcon
+              icon={<CircleAlert size={16} aria-hidden />}
               style={{ marginBottom: 12 }}
               message={t("tools.webSearchConfigLoadError")}
               action={

@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from .agents import router as agents_router
 from .config import router as config_router
+from .chatgpt import router as chatgpt_router
 from .local_models import router as local_models_router
 from .providers import router as providers_router
 from .market import router as market_router
@@ -46,6 +47,7 @@ router = APIRouter()
 router.include_router(community_router)
 router.include_router(community_connection_router)
 router.include_router(community_report_router)
+router.include_router(chatgpt_router)
 
 router.include_router(agents_router)
 router.include_router(config_router)

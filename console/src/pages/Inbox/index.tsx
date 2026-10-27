@@ -22,7 +22,10 @@ import {
   Lightbulb as BulbOutlined,
   Copy as CopyOutlined,
   ChevronDown as DownOutlined,
+  LoaderCircle,
+  RefreshCcw,
   ShieldCheck as SafetyOutlined,
+  TriangleAlert,
   Wrench as ToolOutlined,
 } from "lucide-react";
 import { PackageOpen, Bell, BellRing } from "lucide-react";
@@ -194,12 +197,12 @@ export default function InboxPage() {
   const {
     summary,
     pushMessages,
+    pushMessagesLoading,
+    pushMessagesError,
     markMessageAsRead,
     markAllMessagesAsRead,
     deleteMessage,
     deleteMessages,
-    loading: messagesLoading,
-    error: messagesError,
     refreshPushMessages,
   } = useInboxData({
     sourceType: selectedSourceTypeFilter,
@@ -328,10 +331,10 @@ export default function InboxPage() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (!messagesLoading && messagesPage > totalMessagePages) {
+    if (!pushMessagesLoading && messagesPage > totalMessagePages) {
       setMessagesPage(totalMessagePages);
     }
-  }, [messagesPage, totalMessagePages, messagesLoading]);
+  }, [messagesPage, totalMessagePages, pushMessagesLoading]);
 
   useEffect(() => {
     const validIdSet = new Set(pushMessages.map((item) => item.id));
@@ -539,60 +542,72 @@ export default function InboxPage() {
               )}
             </div>
           </div>
-          {messagesError && (
-            <Alert
-              type="error"
-              showIcon
-              message={t(
-                messagesError === "community_history_unavailable"
-                  ? "communityInbox.historyUnavailable"
-                  : "communityInbox.loadFailed",
+          {pushMessagesError ? (
+            <div className={styles.messagesError} role="alert">
+              <TriangleAlert size={18} aria-hidden="true" />
+              <span>
+                {t(
+                  pushMessagesError.message === "community_history_unavailable"
+                    ? "communityInbox.historyUnavailable"
+                    : selectedSourceTypeFilter === "community"
+                    ? "communityInbox.loadFailed"
+                    : "inbox.loadFailed",
+                )}
+              </span>
+              <Button
+                icon={<RefreshCcw size={16} />}
+                loading={pushMessagesLoading}
+                onClick={() => void refreshPushMessages()}
+              >
+                {t("common.retry")}
+              </Button>
+            </div>
+          ) : null}
+          {pushMessagesLoading && pushMessages.length === 0 ? (
+            <div className={styles.pushMessagesLoading} role="status">
+              <LoaderCircle
+                className={styles.pushMessagesLoadingIcon}
+                size={20}
+                aria-hidden="true"
+              />
+              <span>{t("common.loading")}</span>
+            </div>
+          ) : pushMessagesError &&
+            pushMessages.length === 0 ? null : pushMessages.length > 0 ? (
+            <div className={styles.cardList}>
+              {pagedPushMessages.map((item) => (
+                <PushMessageCard
+                  key={item.id}
+                  message={item}
+                  onMarkAsRead={markMessageAsRead}
+                  onDelete={deleteMessage}
+                  onView={handleViewMessage}
+                  selected={selectedMessageIds.includes(item.id)}
+                  onSelectChange={
+                    batchMode ? handleToggleMessageSelection : undefined
+                  }
+                />
+              ))}
+              <div className={styles.paginationWrap}>
+                <Pagination
+                  current={messagesPage}
+                  total={summary.pushMessages.total}
+                  pageSize={PUSH_MESSAGES_PAGE_SIZE}
+                  onChange={setMessagesPage}
+                  showSizeChanger={false}
+                />
+              </div>
+            </div>
+          ) : (
+            <Empty
+              description={t(
+                selectedSourceTypeFilter === "community"
+                  ? "communityInbox.empty"
+                  : "inbox.emptyPush",
               )}
-              action={
-                <Button size="small" onClick={() => void refreshPushMessages()}>
-                  {t("common.retry")}
-                </Button>
-              }
-              style={{ marginBottom: 12 }}
             />
           )}
           {selectedSourceTypeFilter === "community" && <CommunityInboxState />}
-          <Spin spinning={Boolean(messagesLoading)}>
-            {pushMessages.length > 0 ? (
-              <div className={styles.cardList}>
-                {pagedPushMessages.map((item) => (
-                  <PushMessageCard
-                    key={item.id}
-                    message={item}
-                    onMarkAsRead={markMessageAsRead}
-                    onDelete={deleteMessage}
-                    onView={handleViewMessage}
-                    selected={selectedMessageIds.includes(item.id)}
-                    onSelectChange={
-                      batchMode ? handleToggleMessageSelection : undefined
-                    }
-                  />
-                ))}
-                <div className={styles.paginationWrap}>
-                  <Pagination
-                    current={messagesPage}
-                    total={summary.pushMessages.total}
-                    pageSize={PUSH_MESSAGES_PAGE_SIZE}
-                    onChange={setMessagesPage}
-                    showSizeChanger={false}
-                  />
-                </div>
-              </div>
-            ) : messagesError ? null : (
-              <Empty
-                description={t(
-                  selectedSourceTypeFilter === "community"
-                    ? "communityInbox.empty"
-                    : "inbox.emptyPush",
-                )}
-              />
-            )}
-          </Spin>
         </div>
       ),
     },
@@ -681,11 +696,9 @@ export default function InboxPage() {
           <Badge dot={pendingCount > 0} offset={[-4, 4]}>
             <Button
               icon={<SafetyOutlined size="1em" />}
-              className={
-                mailAclNewArrival && wobbleEnabled
-                  ? styles.mailAclShake
-                  : undefined
-              }
+              className={`${styles.mailAclButton} ${
+                mailAclNewArrival && wobbleEnabled ? styles.mailAclShake : ""
+              }`}
               onMouseEnter={markMailAclSeen}
               onClick={() => {
                 markMailAclSeen();
@@ -716,9 +729,9 @@ export default function InboxPage() {
                 size="small"
                 icon={<BellRing size={16} />}
                 onClick={toggleWobble}
-                className={
-                  wobbleEnabled ? styles.wobbleToggleActive : undefined
-                }
+                className={`${styles.wobbleToggle} ${
+                  wobbleEnabled ? styles.wobbleToggleActive : ""
+                }`}
               />
             </Tooltip>
           }

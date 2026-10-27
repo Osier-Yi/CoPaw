@@ -71,7 +71,7 @@ export function PushMessageCard(props: PushMessageCardProps) {
         isCommunity ? styles.communityCard : ""
       }`}
       hoverable
-      bodyStyle={{ padding: 14 }}
+      styles={{ body: { padding: 14 } }}
       onClick={() => onView(message.id)}
       tabIndex={0}
       role="button"

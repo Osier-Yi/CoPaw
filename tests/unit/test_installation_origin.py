@@ -74,7 +74,7 @@ def test_plugin_origin_records_reject_corruption_and_wrong_local_id(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_failed_replacement_clears_previous_platform_origin(
+async def test_failed_replacement_preserves_previous_platform_origin(
     tmp_path,
     monkeypatch,
 ):
@@ -103,8 +103,8 @@ async def test_failed_replacement_clears_previous_platform_origin(
     loader = loader_module.PluginLoader(plugin_dirs=[plugins_dir])
     with pytest.raises(OSError, match="copy interrupted"):
         await loader.load_plugin_from_path(source, force=True)
-    assert not installed.exists()
-    assert read_plugin_origin(plugins_dir, "demo") is None
+    assert installed.exists()
+    assert read_plugin_origin(plugins_dir, "demo") == origin
 
 
 @pytest.mark.asyncio
@@ -149,7 +149,6 @@ async def test_plugin_install_restart_upgrade_and_local_replacement(
 ):
     from qwenpaw.app.routers import plugins, pawapps
     from qwenpaw.config import utils as config_utils
-    from qwenpaw.plugins.architecture import PluginRecord
     from qwenpaw.plugins.loader import PluginLoader
 
     plugins_dir = tmp_path / "plugins"
@@ -160,26 +159,16 @@ async def test_plugin_install_restart_upgrade_and_local_replacement(
         "name": "Same display name",
         "version": "1.2.3",
         "type": plugin_type,
+        "entry": {"frontend": "index.js"},
         "meta": (
             {"pawapp": {"category": "productivity"}} if is_pawapp else {}
         ),
         "installation_origin": {"provider": "agentscope-platform"},
     }
     (source_dir / "plugin.json").write_text(json.dumps(manifest))
+    (source_dir / "index.js").write_text("export default {};\n")
     loader = PluginLoader(plugin_dirs=[plugins_dir])
 
-    async def fake_load(package_manifest, target_dir, config):
-        del config
-        record = PluginRecord(package_manifest, target_dir, True)
-        loader._loaded_plugins[package_manifest.id] = record
-        return record
-
-    async def fake_unload(plugin_id, delete_files=False):
-        del delete_files
-        loader._loaded_plugins.pop(plugin_id)
-
-    monkeypatch.setattr(loader, "load_plugin", fake_load)
-    monkeypatch.setattr(loader, "_unload_plugin_unlocked", fake_unload)
     monkeypatch.setattr(config_utils, "get_plugins_dir", lambda: plugins_dir)
     source_url = (
         "https://platform.agentscope.io/plugins/alice/demo/archive/zip/master"
@@ -296,16 +285,6 @@ def test_offline_cli_install_replace_and_uninstall_origin(
         plugin_commands,
         "_download_plugin_from_url",
         lambda url: (source_dir, None),
-    )
-    monkeypatch.setattr(
-        plugin_commands,
-        "_sync_tool_plugin_to_agents",
-        lambda m: None,
-    )
-    monkeypatch.setattr(
-        plugin_commands,
-        "_remove_tool_plugin_from_agents",
-        lambda m: None,
     )
     runner = CliRunner()
     source_url = (
