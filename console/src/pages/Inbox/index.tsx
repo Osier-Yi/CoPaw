@@ -564,9 +564,9 @@ export default function InboxPage() {
             </div>
           ) : null}
           {pushMessagesLoading && pushMessages.length === 0 ? (
-            <div className={styles.pushMessagesLoading} role="status">
+            <div className={styles.messagesLoading} role="status">
               <LoaderCircle
-                className={styles.pushMessagesLoadingIcon}
+                className={styles.messagesLoadingIcon}
                 size={20}
                 aria-hidden="true"
               />
