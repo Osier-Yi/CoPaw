@@ -52,7 +52,9 @@ export function CommunityFeedback({
           (item) => item.local_id === installedPluginId,
         );
         setResolved(
-          found ? { id: installedPluginId, origin: found.origin } : undefined,
+          found && found.origin
+            ? { id: installedPluginId, origin: found.origin }
+            : undefined,
         );
         setFailed(data.lookup_failed_ids?.includes(installedPluginId) || false);
       })

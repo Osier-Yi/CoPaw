@@ -12,6 +12,38 @@ export const communityResourceIdentity = (origin: InstallationOrigin) =>
     origin.resource_id
   }`;
 
+/** Skill vs plugin, tolerating cloud refs that carry only a `type`. */
+export const reportResourceKind = (item: ReportResource): "skill" | "plugin" =>
+  (item.origin?.resource_type ?? item.type) === "skill" ? "skill" : "plugin";
+
+/**
+ * Identity that works for both installed origins and cloud-restored refs so
+ * the picker, tags and payload split never dereference a missing origin.
+ */
+export const reportResourceIdentity = (item: ReportResource) =>
+  item.origin
+    ? communityResourceIdentity(item.origin)
+    : `${reportResourceKind(item)}:${item.related_id ?? ""}`;
+
+/**
+ * Split resources for a publish/save request: verified installations go to
+ * `origins` (re-checked by the backend), cloud-restored refs go to `related`
+ * (passed through verbatim).
+ */
+export function splitReportResources(resources: ReportResource[]): {
+  origins: InstallationOrigin[];
+  related: { type: "skill" | "plugin"; id: string }[];
+} {
+  const origins: InstallationOrigin[] = [];
+  const related: { type: "skill" | "plugin"; id: string }[] = [];
+  for (const item of resources) {
+    if (item.origin) origins.push(item.origin);
+    else if (item.related_id)
+      related.push({ type: reportResourceKind(item), id: item.related_id });
+  }
+  return { origins, related };
+}
+
 function marketOrigin(
   id: string,
   type: InstallationOrigin["resource_type"],

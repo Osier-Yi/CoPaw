@@ -921,6 +921,9 @@
   }
 }
 .draftCard {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   padding: 20px;
   margin: 16px 0;
   border: 1px solid var(--app-border);
@@ -935,6 +938,38 @@
     color: var(--app-text-secondary);
     overflow-wrap: anywhere;
   }
+  // Pin the edit / delete cluster to the right edge, vertically centered.
+  > .actions {
+    flex-shrink: 0;
+    justify-content: flex-end;
+    // Soft red fill for the destructive action, matching the Platform card.
+    .deleteBtn {
+      background: var(--app-error-bg);
+      color: var(--app-error-text);
+      border-color: transparent;
+      &:hover,
+      &:focus {
+        background: var(--app-error-border);
+        color: var(--app-error-text);
+      }
+    }
+  }
+}
+.draftMain {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .draftCard {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+// One-line content preview; anything longer is clipped with an ellipsis.
+.draftSummary {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 @media (max-width: 600px) {
   .draftLibrary {

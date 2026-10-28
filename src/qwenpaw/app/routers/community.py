@@ -464,6 +464,19 @@ def _post_html(content: str) -> str:
     )
 
 
+class RelatedRef(BaseModel):
+    """A cloud-side association carried by a draft or a post.
+
+    Unlike InstallationOrigin these IDs are never re-verified against a
+    local installation: the Platform stores a plugin_id slug for plugins
+    and a UUID for skills, so they cannot round-trip through the
+    installation-origin validator.
+    """
+
+    type: Literal["skill", "plugin"]
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+
+
 class CommunityPostRequest(BaseModel):
     title: str = Field(min_length=1, max_length=256)
     content: str = Field(min_length=1, max_length=65536)
@@ -485,6 +498,7 @@ class CommunityPostRequest(BaseModel):
         default_factory=list,
         max_length=6,
     )
+    related: list[RelatedRef] = Field(default_factory=list, max_length=6)
 
 
 @router.post("/posts")
@@ -569,6 +583,25 @@ async def _community_post_payload(body: CommunityPostRequest) -> dict:
             payload[field] = list(
                 dict.fromkeys(payload[field] + query.get(param, [])),
             )
+    # Cloud-side associations (restored from a draft) pass through directly;
+    # they share the per-kind cap with the verified installation origins.
+    # The `not in` guard dedups repeats, so no hashing of the model is needed.
+    for ref in body.related:
+        field = (
+            "related_skill_ids"
+            if ref.type == "skill"
+            else "related_plugin_ids"
+        )
+        if ref.id not in payload[field]:
+            payload[field].append(ref.id)
+    if any(
+        len(payload[field]) > 3
+        for field in ("related_skill_ids", "related_plugin_ids")
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="too_many_related_resources",
+        )
     return payload
 
 
@@ -582,23 +615,23 @@ def _draft_view(post: dict) -> dict:
     resources = []
     for kind in ("skill", "plugin"):
         for identifier in post.get(f"related_{kind}_ids") or []:
-            collection = "skills" if kind == "skill" else "plugins"
+            # Report the cloud-side ID as-is; it must not masquerade as an
+            # installation origin or restoring the draft would fail the
+            # origin validator on publish (slug vs UUID/@owner/name).
             resources.append(
                 {
                     "name": identifier,
-                    "origin": {
-                        "provider": "agentscope-platform",
-                        "resource_type": kind,
-                        "resource_id": identifier,
-                        "source_url": "https://platform.agentscope.io/"
-                        f"{collection}/{quote(identifier, safe='')}",
-                    },
+                    "type": kind,
+                    "related_id": identifier,
                 },
             )
     return {
         "id": post["id"],
         "title": post.get("title") or "",
         "content": content,
+        # The list endpoint only carries `summary` (no body_text), so expose
+        # it for the one-line preview in the draft library.
+        "summary": str(post.get("summary") or ""),
         "type": post.get("article_type") or "discussion",
         "updated_at": post.get("updated_at") or post.get("created_at"),
         "resources": resources,
@@ -653,13 +686,19 @@ async def community_drafts(
     request: Request,
     account_id: str = Query(min_length=1, max_length=128),
     page: int = Query(1, ge=1, le=10000),
+    draft_type: Literal["article", "question"] | None = None,
 ):
+    params: dict[str, Any] = {"page": page, "page_size": 20}
+    # Mirror Platform's getMyDrafts type filter ("article" | "question");
+    # omit it to list every draft, exactly like the Platform front.
+    if draft_type:
+        params["type"] = draft_type
     data = await _call(
         get_service(request).community_request(
             "GET",
             "/api/v1/community/me/drafts",
             account_id=account_id,
-            params={"page": page, "page_size": 20},
+            params=params,
         ),
     )
     return {

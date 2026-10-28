@@ -124,14 +124,18 @@ export function DraftLibrary({
           ) : (
             items.map((item) => (
               <article key={item.id} className={styles.draftCard}>
-                <div>
-                  <Tag>{t(`communityPage.${item.type}`)}</Tag>
-                  <span className={styles.hint}>
-                    {new Date(item.updatedAt).toLocaleString()}
-                  </span>
+                <div className={styles.draftMain}>
+                  <div>
+                    <Tag>{t(`communityPage.${item.type}`)}</Tag>
+                    <span className={styles.hint}>
+                      {new Date(item.updatedAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <h2>{item.title || t("communityDrafts.untitled")}</h2>
+                  <p className={styles.draftSummary}>
+                    {item.summary || item.content || item.instructions}
+                  </p>
                 </div>
-                <h2>{item.title || t("communityDrafts.untitled")}</h2>
-                <p>{item.content.slice(0, 160) || item.instructions}</p>
                 <div className={styles.actions}>
                   <Button onClick={() => onOpen(item)}>
                     {t("communityDrafts.edit")}
@@ -140,7 +144,7 @@ export function DraftLibrary({
                     title={t("communityDrafts.deleteConfirm")}
                     onConfirm={() => remove(item.id)}
                   >
-                    <Button type="text" danger>
+                    <Button className={styles.deleteBtn} type="text" danger>
                       {t("common.delete")}
                     </Button>
                   </Popconfirm>
@@ -163,14 +167,20 @@ export function DraftLibrary({
             <p className={styles.hint}>{t("communityDrafts.legacyHelp")}</p>
             {legacy.map((item) => (
               <article className={styles.draftCard} key={item.id}>
-                <h3>{item.title || t("communityDrafts.untitled")}</h3>
-                <p>{item.content.slice(0, 160) || item.instructions}</p>
-                <Button
-                  disabled={mutating}
-                  onClick={() => void importLegacy(item)}
-                >
-                  {t("communityDrafts.import")}
-                </Button>
+                <div className={styles.draftMain}>
+                  <h3>{item.title || t("communityDrafts.untitled")}</h3>
+                  <p className={styles.draftSummary}>
+                    {item.content || item.instructions}
+                  </p>
+                </div>
+                <div className={styles.actions}>
+                  <Button
+                    disabled={mutating}
+                    onClick={() => void importLegacy(item)}
+                  >
+                    {t("communityDrafts.import")}
+                  </Button>
+                </div>
               </article>
             ))}
           </>

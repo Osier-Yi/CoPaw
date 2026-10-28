@@ -47,6 +47,11 @@ import {
 import { PostAssistance } from "./PostAssistance";
 import { ResourcePicker } from "./ResourcePicker";
 import { communityResourceIdentity } from "@/utils/communityResources";
+import {
+  reportResourceIdentity,
+  reportResourceKind,
+  splitReportResources,
+} from "@/utils/communityResources";
 import { redactReportText } from "./reportPrivacy";
 import styles from "./index.module.less";
 import { getPostDraft, savePostDraft } from "./postDrafts";
@@ -161,6 +166,8 @@ export function PostComposer({
 }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<CommunityConnectionStatus>();
+  const statusRef = useRef<CommunityConnectionStatus>();
+  statusRef.current = status;
   const [title, setTitle] = useState(
     initialBody.match(/^#\s+(.+)/)?.[1]?.slice(0, 256) || "",
   );
@@ -480,7 +487,13 @@ export function PostComposer({
     const textarea = bodyEditor.current?.resizableTextArea?.textArea;
     const start = textarea?.selectionStart ?? content.length;
     const end = textarea?.selectionEnd ?? content.length;
-    setContent(`${content.slice(0, start)}${snippet}${content.slice(end)}`);
+    // Splice against the latest body so text typed while an upload was in
+    // flight survives the insertion.
+    setContent((prev) => {
+      const from = textarea ? start : prev.length;
+      const to = textarea ? end : prev.length;
+      return `${prev.slice(0, from)}${snippet}${prev.slice(to)}`;
+    });
     setConfirmed(false);
     requestAnimationFrame(() => {
       const el = bodyEditor.current?.resizableTextArea?.textArea;
@@ -508,12 +521,13 @@ export function PostComposer({
       return;
     }
     setVideoBusy(true);
+    const accountId = status.account.id;
     try {
-      const item = await communityMediaApi.upload(
-        file,
-        status.account.id,
-        "body",
-      );
+      const item = await communityMediaApi.upload(file, accountId, "body");
+      // Drop the result if the composer closed or the account switched
+      // while the upload was in flight.
+      if (!mounted.current || statusRef.current?.account?.id !== accountId)
+        return;
       setMedia((prev) => [...prev, item]);
       insertSnippetAtCaret(`![${file.name}](${item.url})`);
     } catch (error) {
@@ -541,12 +555,11 @@ export function PostComposer({
       return;
     }
     setImageBusy(true);
+    const accountId = status.account.id;
     try {
-      const item = await communityMediaApi.upload(
-        file,
-        status.account.id,
-        "body",
-      );
+      const item = await communityMediaApi.upload(file, accountId, "body");
+      if (!mounted.current || statusRef.current?.account?.id !== accountId)
+        return;
       setMedia((prev) => [...prev, item]);
       insertSnippetAtCaret(`![${file.name}](${item.url})`);
     } catch (error) {
@@ -606,7 +619,7 @@ export function PostComposer({
             .map((item) => item.media_id),
           article_type: type,
           account_id: status.account.id,
-          origins: resources.map((item) => item.origin),
+          ...splitReportResources(resources),
         }),
       });
       if (cacheKey.current) removeWritingSession(cacheKey.current);
@@ -909,25 +922,25 @@ export function PostComposer({
                     <div className={styles.resourceRow}>
                       {resources.map((item) => (
                         <Tag
-                          key={reportResourceKey(item.origin)}
+                          key={reportResourceIdentity(item)}
                           closable={
                             !locked &&
                             (!origin ||
-                              reportResourceKey(item.origin) !==
-                                reportResourceKey(origin))
+                              reportResourceIdentity(item) !==
+                                communityResourceIdentity(origin))
                           }
                           onClose={() => {
                             setResources((current) =>
                               current.filter(
                                 (resource) =>
-                                  reportResourceKey(resource.origin) !==
-                                  reportResourceKey(item.origin),
+                                  reportResourceIdentity(resource) !==
+                                  reportResourceIdentity(item),
                               ),
                             );
                             setConfirmed(false);
                           }}
                         >
-                          {item.name} · {item.origin.resource_type}
+                          {item.name} · {reportResourceKind(item)}
                         </Tag>
                       ))}
                     </div>
@@ -942,14 +955,14 @@ export function PostComposer({
                           origin &&
                           !selected.some(
                             (item) =>
-                              communityResourceIdentity(item.origin) ===
+                              reportResourceIdentity(item) ===
                               communityResourceIdentity(origin),
                           )
                         )
                           selected.unshift(
                             resources.find(
                               (item) =>
-                                communityResourceIdentity(item.origin) ===
+                                reportResourceIdentity(item) ===
                                 communityResourceIdentity(origin),
                             )!,
                           );
@@ -958,7 +971,7 @@ export function PostComposer({
                             (skill) =>
                               selected.filter(
                                 (item) =>
-                                  (item.origin.resource_type === "skill") ===
+                                  (reportResourceKind(item) === "skill") ===
                                   skill,
                               ).length > 3,
                           )
@@ -1217,8 +1230,8 @@ export function PostComposer({
                       (item) =>
                         catalog.find(
                           (entry) =>
-                            reportResourceKey(entry.origin) ===
-                            reportResourceKey(item.origin),
+                            reportResourceIdentity(entry) ===
+                            reportResourceIdentity(item),
                         ) || item,
                     )}
                     screenshots={screenshots}

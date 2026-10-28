@@ -33,7 +33,15 @@ export function generateCommunityReport(
 export interface ReportResource {
   name: string;
   local_id?: string;
-  origin: InstallationOrigin;
+  /** Present for locally-installed resources that can be re-verified. */
+  origin?: InstallationOrigin;
+  /**
+   * Cloud-side association restored from a Platform draft. It carries the
+   * stored id directly (a plugin_id slug or a skill UUID) and never has an
+   * installation origin, so it round-trips through the `related` channel.
+   */
+  related_id?: string;
+  type?: "skill" | "plugin";
   description?: string;
   status?: Record<string, unknown>;
 }
@@ -76,7 +84,7 @@ export function lookupInstalledPluginLinks(
     ).then((data) => ({
       ...data,
       resources: data.resources.filter(
-        (item) => item.origin.resource_type !== "skill",
+        (item) => item.origin && item.origin.resource_type !== "skill",
       ),
     }));
     pluginLinks = pending;

@@ -268,3 +268,122 @@ async def test_publish_requires_account_and_maps_resource(monkeypatch):
     assert payload["related_plugin_ids"] == ["demo"]
     assert "<script>" not in payload["body_html"]
     assert calls[0][2]["account_id"] == "alice"
+
+
+@pytest.mark.asyncio
+async def test_related_channel_passes_cloud_ids_through(monkeypatch):
+    """A restored draft's cloud IDs pass through without re-verification."""
+    from importlib import import_module
+
+    router = import_module("qwenpaw.app.routers.community")
+
+    async def resolve(_):
+        raise AssertionError("related refs must not hit the feedback resolver")
+
+    monkeypatch.setattr(router, "feedback_link", resolve)
+    body = router.CommunityPostRequest(
+        title="Title",
+        content="Body",
+        account_id="alice",
+        # The Platform stores a slug for plugins and a UUID for skills; both
+        # must survive verbatim instead of masquerading as an install origin.
+        related=[
+            router.RelatedRef(type="plugin", id="demo-slug"),
+            router.RelatedRef(type="skill", id="01a0156d-88e5"),
+            router.RelatedRef(type="plugin", id="demo-slug"),
+        ],
+    )
+    payload = await router._community_post_payload(body)
+    assert payload["related_plugin_ids"] == ["demo-slug"]
+    assert payload["related_skill_ids"] == ["01a0156d-88e5"]
+
+
+@pytest.mark.asyncio
+async def test_related_cap_merges_with_verified_origins(monkeypatch):
+    """The per-kind cap of 3 counts cloud refs and origins together."""
+    from importlib import import_module
+    from fastapi import HTTPException
+
+    router = import_module("qwenpaw.app.routers.community")
+
+    async def resolve(_):
+        return {
+            "url": (
+                "https://platform.agentscope.io/community/ask"
+                "?relatedPluginId=verified"
+            ),
+        }
+
+    monkeypatch.setattr(router, "feedback_link", resolve)
+    body = router.CommunityPostRequest(
+        title="Title",
+        content="Body",
+        account_id="alice",
+        origin=router.InstallationOrigin.model_validate(
+            origin_from_platform_url(
+                "https://platform.agentscope.io/plugins/@alice/demo",
+                "plugin",
+                "1.0",
+            ),
+        ),
+        related=[
+            router.RelatedRef(type="plugin", id="a"),
+            router.RelatedRef(type="plugin", id="b"),
+            router.RelatedRef(type="plugin", id="c"),
+        ],
+    )
+    with pytest.raises(HTTPException) as exc:
+        await router._community_post_payload(body)
+    assert exc.value.detail == "too_many_related_resources"
+
+
+def test_draft_view_reports_cloud_id_not_fake_origin():
+    """A cloud draft must not fabricate an installation origin on restore."""
+    from importlib import import_module
+
+    router = import_module("qwenpaw.app.routers.community")
+    view = router._draft_view(
+        {
+            "id": "d1",
+            "title": "Draft",
+            "article_type": "discussion",
+            "summary": "First line of the saved body.",
+            "related_plugin_ids": ["demo-slug"],
+            "related_skill_ids": ["01a0156d-88e5"],
+        },
+    )
+    # The list preview reads `summary` because list items carry no body_text.
+    assert view["summary"] == "First line of the saved body."
+    by_type = {item["type"]: item for item in view["resources"]}
+    assert by_type["plugin"]["related_id"] == "demo-slug"
+    assert by_type["skill"]["related_id"] == "01a0156d-88e5"
+    assert all("origin" not in item for item in view["resources"])
+
+
+@pytest.mark.asyncio
+async def test_drafts_list_mirrors_platform_type_filter(monkeypatch):
+    """GET /community/drafts forwards Platform's getMyDrafts `type` filter."""
+    from importlib import import_module
+
+    router = import_module("qwenpaw.app.routers.community")
+    calls = []
+
+    class Service:
+        async def community_request(self, method, path, **kwargs):
+            calls.append((method, path, kwargs))
+            return {"items": [], "total": 0}
+
+    monkeypatch.setattr(router, "get_service", lambda _: Service())
+
+    # No type -> no filter forwarded, listing every draft like Platform.
+    await router.community_drafts(None, "alice", 1, None)
+    assert calls[-1][1] == "/api/v1/community/me/drafts"
+    assert calls[-1][2]["params"] == {"page": 1, "page_size": 20}
+
+    # type -> forwarded verbatim as Platform's `type` query param.
+    await router.community_drafts(None, "alice", 2, "question")
+    assert calls[-1][2]["params"] == {
+        "page": 2,
+        "page_size": 20,
+        "type": "question",
+    }
