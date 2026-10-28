@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import type { InboxEvent } from "../api/modules/console";
+import { ApprovalProvider } from "../contexts/ApprovalContext";
 import { useOsNotify } from "./osNotifyStore";
 import { INBOX_CHANGED_EVENT } from "../utils/inboxEvents";
 
@@ -34,6 +36,10 @@ function event(id: string, sourceType: string): InboxEvent {
   };
 }
 
+function wrapper({ children }: { children: ReactNode }) {
+  return <ApprovalProvider>{children}</ApprovalProvider>;
+}
+
 describe("useOsNotifyPoller", () => {
   beforeEach(() => {
     mockGetInboxEvents.mockReset();
@@ -65,7 +71,7 @@ describe("useOsNotifyPoller", () => {
       ],
     });
 
-    const { unmount } = renderHook(() => useOsNotifyPoller());
+    const { unmount } = renderHook(() => useOsNotifyPoller(), { wrapper });
 
     await waitFor(() => expect(useOsNotify.getState().seeded).toBe(true));
     expect(mockGetInboxEvents).toHaveBeenCalledWith({
@@ -82,6 +88,7 @@ describe("useOsNotifyPoller", () => {
       exclude_acl_pending: true,
     });
     expect(useOsNotify.getState().inboxCount).toBe(12);
+    expect(mockGetPushMessages).not.toHaveBeenCalled();
 
     unmount();
   });
@@ -110,7 +117,7 @@ describe("useOsNotifyPoller", () => {
       toasts: [old],
       knownIds: new Set([old.id]),
     });
-    const { unmount } = renderHook(() => useOsNotifyPoller());
+    const { unmount } = renderHook(() => useOsNotifyPoller(), { wrapper });
     await waitFor(() => expect(mockGetInboxEvents).toHaveBeenCalledOnce());
     mockGetInboxEvents.mockResolvedValue({
       events: [],
@@ -162,7 +169,7 @@ describe("useOsNotifyPoller", () => {
       unread_count: 1,
       community_scope: "new-scope",
     });
-    const { unmount } = renderHook(() => useOsNotifyPoller());
+    const { unmount } = renderHook(() => useOsNotifyPoller(), { wrapper });
     await waitFor(() =>
       expect(useOsNotify.getState().communityScope).toBe("new-scope"),
     );

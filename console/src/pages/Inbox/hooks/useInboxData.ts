@@ -294,12 +294,16 @@ export const useInboxData = ({
     },
   });
   const [pushMessages, setPushMessages] = useState<PushMessage[]>([]);
+  const [pushMessagesLoading, setPushMessagesLoading] = useState(true);
+  const [pushMessagesError, setPushMessagesError] = useState<Error | null>(
+    null,
+  );
+  const pushMessagesRequestIdRef = useRef(0);
+  const pushMessagesRequestRef = useRef<Promise<void> | null>(null);
   const pushMessagesRef = useRef(pushMessages);
   pushMessagesRef.current = pushMessages;
   const [harvests] = useState<HarvestInstance[]>(MOCK_HARVESTS);
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const readingIds = useRef(new Set<string>());
   const effectiveAgentId = sourceType === "community" ? undefined : agentId;
@@ -312,57 +316,93 @@ export const useInboxData = ({
   const queryKeyRef = useRef(queryKey);
   queryKeyRef.current = queryKey;
 
-  const loadPushMessages = useCallback(async () => {
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setLoading(true);
-    try {
-      const res = await api.getInboxEvents({
-        limit: pageSize,
-        offset: (Math.max(1, page) - 1) * pageSize,
-        source_types: sourceType ? [sourceType] : [...PUSH_MESSAGE_SOURCES],
-        agent_id: effectiveAgentId,
-        exclude_acl_pending: true,
-        signal: controller.signal,
+  const loadPushMessages = useCallback(
+    (force = false): Promise<void> => {
+      if (!force && pushMessagesRequestRef.current) {
+        return pushMessagesRequestRef.current;
+      }
+      requestRef.current?.abort();
+      const controller = new AbortController();
+      requestRef.current = controller;
+      const requestId = ++pushMessagesRequestIdRef.current;
+      const isLatestRequest = () =>
+        !controller.signal.aborted &&
+        pushMessagesRequestIdRef.current === requestId;
+      setPushMessagesLoading(true);
+      const request = (async () => {
+        try {
+          const res = await api.getInboxEvents({
+            limit: pageSize,
+            offset: (Math.max(1, page) - 1) * pageSize,
+            source_types: sourceType ? [sourceType] : [...PUSH_MESSAGE_SOURCES],
+            agent_id: effectiveAgentId,
+            exclude_acl_pending: true,
+            signal: controller.signal,
+          });
+          const events = [...(res?.events || [])].filter(
+            (event) =>
+              isPushMessageEvent(event) &&
+              // Pending-approval mail events are handled in the mail access
+              // control drawer; keep them out of the push message list.
+              (event.payload as Record<string, unknown> | undefined)
+                ?.acl_status !== "pending",
+          );
+          events.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+          const nextItems: PushMessage[] = events.map((event) =>
+            mapEventToPushMessage(
+              event,
+              resolveAgentNameRef.current,
+              tRef.current,
+            ),
+          );
+          if (!isLatestRequest()) return;
+          setPushMessages(nextItems);
+          setSummary((prev) => ({
+            ...prev,
+            pushMessages: {
+              total: res?.total ?? nextItems.length,
+              unread:
+                res?.unread_count ?? nextItems.filter((m) => !m.read).length,
+            },
+          }));
+          setPushMessagesError(
+            res?.source_errors?.community
+              ? new Error(res.source_errors.community)
+              : null,
+          );
+        } catch (error) {
+          if (!isLatestRequest()) return;
+          console.error("Failed to fetch push inbox data", error);
+          setPushMessagesError(
+            error instanceof Error
+              ? error
+              : new Error("Failed to fetch push inbox data"),
+          );
+        } finally {
+          if (isLatestRequest()) setPushMessagesLoading(false);
+        }
+      })();
+      pushMessagesRequestRef.current = request;
+      return request.finally(() => {
+        if (pushMessagesRequestRef.current === request) {
+          pushMessagesRequestRef.current = null;
+        }
       });
-      if (controller.signal.aborted) return;
-      const events = [...(res?.events || [])].filter(
-        (event) =>
-          isPushMessageEvent(event) && event.payload?.acl_status !== "pending",
-      );
-      events.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
-      const nextItems = events.map((event) =>
-        mapEventToPushMessage(event, resolveAgentNameRef.current, tRef.current),
-      );
-      setPushMessages(nextItems);
-      setSummary((prev) => ({
-        ...prev,
-        pushMessages: {
-          total: res?.total ?? nextItems.length,
-          unread: res?.unread_count ?? nextItems.filter((m) => !m.read).length,
-        },
-      }));
-      // A source can fail independently while local messages remain readable.
-      setError(res?.source_errors?.community || null);
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        console.error("Failed to fetch push inbox data", error);
-        setError(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      if (requestRef.current === controller) {
-        requestRef.current = null;
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    }
-  }, [sourceType, effectiveAgentId, page, pageSize]);
+    },
+    [sourceType, effectiveAgentId, page, pageSize],
+  );
+
+  const refreshPushMessages = useCallback(
+    () => loadPushMessages(true),
+    [loadPushMessages],
+  );
 
   useEffect(() => {
     // A different query must not display messages from the previous account or
     // source while it is loading. Poll failures retain the current query's data.
     setPushMessages([]);
-    void loadPushMessages();
+    setPushMessagesError(null);
+    void loadPushMessages(true);
     let timer: number | null = null;
     const startPolling = () => {
       if (timer == null)
@@ -398,7 +438,7 @@ export const useInboxData = ({
             pushMessages: { total: 0, unread: 0 },
           }));
       }
-      void loadPushMessages();
+      void loadPushMessages(true);
     };
     if (document.visibilityState === "visible") startPolling();
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -438,7 +478,9 @@ export const useInboxData = ({
         notifyInboxChanged({ readIds: [messageId] });
       })
       .catch((error) => {
-        setError(error instanceof Error ? error.message : String(error));
+        setPushMessagesError(
+          error instanceof Error ? error : new Error(String(error)),
+        );
       })
       .finally(() => readingIds.current.delete(messageId));
   }, []);
@@ -495,7 +537,9 @@ export const useInboxData = ({
       }));
     }
     if (deletedIds.length !== ids.length)
-      setError(tRef.current("communityInbox.deleteFailed"));
+      setPushMessagesError(
+        new Error(tRef.current("communityInbox.deleteFailed")),
+      );
     if (deletedIds.length) notifyInboxChanged({ deletedIds });
     return deletedIds.length;
   }, []);
@@ -513,15 +557,17 @@ export const useInboxData = ({
 
   return {
     summary,
-    loading,
-    error,
+    loading: pushMessagesLoading,
+    error: pushMessagesError?.message ?? null,
     pushMessages,
+    pushMessagesLoading,
+    pushMessagesError,
     harvests,
     markMessageAsRead,
     markAllMessagesAsRead,
     deleteMessage,
     deleteMessages,
     triggerHarvest,
-    refreshPushMessages: loadPushMessages,
+    refreshPushMessages,
   };
 };

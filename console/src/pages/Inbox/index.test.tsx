@@ -296,12 +296,17 @@ function makeInboxData(messages: PushMessage[], summaryUnread = 0) {
     deleteMessages: vi.fn().mockResolvedValue(0),
     triggerHarvest: vi.fn(),
     refreshPushMessages: vi.fn(),
+    pushMessagesLoading: false,
+    pushMessagesError: null,
   };
   return mocks.inboxData as {
+    pushMessagesLoading: boolean;
+    pushMessagesError: Error | null;
     markMessageAsRead: ReturnType<typeof vi.fn>;
     markAllMessagesAsRead: ReturnType<typeof vi.fn>;
     deleteMessage: ReturnType<typeof vi.fn>;
     deleteMessages: ReturnType<typeof vi.fn>;
+    refreshPushMessages: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -318,10 +323,10 @@ describe("InboxPage", () => {
   it("keeps local cards visible with an explicit retryable community source error", () => {
     makeInboxData([pushMsg("local")]);
     const data = mocks.inboxData as {
-      error?: string;
+      pushMessagesError?: Error;
       refreshPushMessages: ReturnType<typeof vi.fn>;
     };
-    data.error = "community_history_unavailable";
+    data.pushMessagesError = new Error("community_history_unavailable");
     renderWithProviders(<InboxPage />);
     expect(screen.getByTestId("push-card-local")).toBeInTheDocument();
     expect(
@@ -333,8 +338,8 @@ describe("InboxPage", () => {
 
   it("does not present broken community history as an empty community inbox", () => {
     makeInboxData([]);
-    (mocks.inboxData as { error?: string }).error =
-      "community_history_unavailable";
+    (mocks.inboxData as { pushMessagesError?: Error }).pushMessagesError =
+      new Error("community_history_unavailable");
     renderWithProviders(<InboxPage />, {
       initialEntries: ["/inbox?source=community"],
     });
@@ -421,6 +426,46 @@ describe("InboxPage", () => {
     await waitFor(() => {
       expect(screen.getByTestId("inbox-empty")).toBeTruthy();
     });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows loading instead of an empty result during the initial fetch", () => {
+    const data = makeInboxData([]);
+    data.pushMessagesLoading = true;
+    renderWithProviders(<InboxPage />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("common.loading");
+    expect(screen.queryByTestId("inbox-empty")).toBeNull();
+  });
+
+  it("retries an empty-cache failure and renders the recovered message", async () => {
+    const data = makeInboxData([]);
+    data.pushMessagesError = new Error("offline");
+    const { rerender } = renderWithProviders(<InboxPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("inbox.loadFailed");
+    expect(screen.queryByTestId("inbox-empty")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "common.retry" }));
+    expect(data.refreshPushMessages).toHaveBeenCalledTimes(1);
+
+    makeInboxData([pushMsg("recovered")]);
+    rerender(<InboxPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId("push-card-recovered")).toBeTruthy();
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps stale rows visible with a non-destructive retry affordance", () => {
+    const data = makeInboxData([pushMsg("stale")]);
+    data.pushMessagesError = new Error("offline");
+    renderWithProviders(<InboxPage />);
+
+    expect(screen.getByTestId("push-card-stale")).toBeTruthy();
+    expect(screen.getByRole("alert")).toHaveTextContent("inbox.loadFailed");
+    expect(screen.queryByTestId("inbox-empty")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "common.retry" }));
+    expect(data.refreshPushMessages).toHaveBeenCalledTimes(1);
   });
 
   it("persists the active tab to localStorage and restores it", async () => {
