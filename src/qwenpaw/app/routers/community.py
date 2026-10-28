@@ -11,7 +11,15 @@ from urllib.parse import quote, parse_qs, urlsplit
 
 import httpx
 from markdown_it import MarkdownIt
-from fastapi import APIRouter, HTTPException, Request, Query, Path, File, UploadFile
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Request,
+    Query,
+    Path,
+    File,
+    UploadFile,
+)
 from pydantic import BaseModel, Field
 
 from .community_connection import get_service, _call
@@ -165,7 +173,7 @@ async def community_media_upload(
     account_id: str = Query(min_length=1, max_length=128),
 ):
     data = await file.read()
-    # Body media carries videos (platform cap 500MB); comments stay image-sized.
+    # Body media may include videos; comments use the smaller image limit.
     limit = 500 * 1024 * 1024 if purpose == "body" else 10 * 1024 * 1024
     if len(data) > limit:
         raise HTTPException(status_code=413, detail="media_too_large")
@@ -180,7 +188,7 @@ async def community_media_upload(
                     file.filename or "image.png",
                     data,
                     file.content_type or "application/octet-stream",
-                )
+                ),
             },
             timeout=60,
         ),
@@ -285,7 +293,8 @@ async def accept_community_comment(
     return await _call(
         get_service(request).community_request(
             "POST",
-            f"/api/v1/community/articles/{post_id}/comments/{comment_id}/accept",
+            f"/api/v1/community/articles/{post_id}"
+            f"/comments/{comment_id}/accept",
             account_id=body.account_id,
         ),
     )
@@ -301,7 +310,8 @@ async def unaccept_community_comment(
     return await _call(
         get_service(request).community_request(
             "DELETE",
-            f"/api/v1/community/articles/{post_id}/comments/{comment_id}/accept",
+            f"/api/v1/community/articles/{post_id}"
+            f"/comments/{comment_id}/accept",
             account_id=body.account_id,
         ),
     )

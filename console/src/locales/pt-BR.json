@@ -868,7 +868,6 @@
     "selectBuiltin": "Builtin",
     "selectNone": "Nenhum",
     "noPoolSkills": "No skills available in pool",
-    "addSkillsToAgent": "Adicionar Skills",
     "model": "Modelo",
     "modelHelp": "Assign a specific LLM model to this agent. Leave empty to use the global default.",
     "modelPlaceholder": "Use global Padrao",
@@ -4978,6 +4977,9 @@
     "retry": "Tentar novamente"
   },
   "preview": {
+    "unavailable": "Visualização indisponível",
+    "showDetails": "Ver motivo",
+    "hideDetails": "Ocultar detalhes",
     "error": {
       "SENSITIVE_FILE_BLOCKED": "Este arquivo está bloqueado pelo File Guard (proteção de arquivos sensíveis).",
       "OUTSIDE_WORKSPACE": "Este arquivo está fora do escopo do workspace. Ative \"Permitir Preview Fora do Workspace no Console\" em Configurações → Segurança → File Guard.",

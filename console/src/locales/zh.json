@@ -903,7 +903,6 @@
     "selectBuiltin": "内置",
     "selectNone": "清空",
     "noPoolSkills": "技能池中暂无可用技能",
-    "addSkillsToAgent": "添加技能",
     "backend": {
       "column": "后端",
       "eyebrow": "智能体架构",
@@ -4433,6 +4432,7 @@
       "modeTooltip": "控制扫描器如何处理不安全的技能：拦截、仅提醒或关闭",
       "modeBlock": "拦截",
       "modeWarn": "仅提醒",
+      "modeOff": "关闭",
       "timeout": "扫描超时（秒）",
       "timeoutTooltip": "等待扫描完成的最长时间（5-300秒）",
       "saveSuccess": "技能扫描器设置已保存",
@@ -5771,6 +5771,9 @@
     }
   },
   "preview": {
+    "unavailable": "预览不可用",
+    "showDetails": "查看原因",
+    "hideDetails": "收起详情",
     "error": {
       "SENSITIVE_FILE_BLOCKED": "该文件被文件防护拦截（敏感文件保护）。",
       "OUTSIDE_WORKSPACE": "该文件位于工作区范围之外。请在 设置 → 安全 → 文件防护 中启用「允许控制台预览工作区外文件」。",

@@ -1,4 +1,3 @@
-import { INBOX_CHANGED_EVENT } from "../utils/inboxEvents";
 import { NotificationBell } from "@/components/interaction/NotificationBell";
 import {
   Layout,
@@ -107,7 +106,7 @@ function readLastOpenToolsMode(): number {
     return 1;
   }
 }
-const INBOX_BADGE_POLLING_MS = 6000;
+const INBOX_BADGE_POLLING_MS = 15000;
 // ── Types ─────────────────────────────────────────────────────────────────
 
 interface SidebarProps {
@@ -155,6 +154,7 @@ export default function Sidebar({
   const [accountLoading, setAccountLoading] = useState(false);
   const [runtimeRestarting, setRuntimeRestarting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsTriggerRef = useRef<HTMLButtonElement>(null);
   const [historyPopoverOpen, setHistoryPopoverOpen] = useState(false);
   const [agentPopoverOpen, setAgentPopoverOpen] = useState(false);
   const [version, setVersion] = useState("");
@@ -369,14 +369,16 @@ export default function Sidebar({
 
   useEffect(() => {
     let inFlight = false;
+    let cancelled = false;
     const loadUnreadState = async () => {
-      if (inFlight) return;
+      if (inFlight || document.hidden) return;
       inFlight = true;
       try {
         const inboxRes = await api.getInboxEvents({
           unread_only: true,
           limit: 1,
         });
+        if (cancelled) return;
         const hasUnreadEvents = (inboxRes?.events?.length || 0) > 0;
         setUnreadCount(
           inboxRes?.unread_count ??
@@ -393,10 +395,14 @@ export default function Sidebar({
     const timer = window.setInterval(() => {
       void loadUnreadState();
     }, INBOX_BADGE_POLLING_MS);
-    window.addEventListener(INBOX_CHANGED_EVENT, loadUnreadState);
+    const onVisibility = () => {
+      if (!document.hidden) void loadUnreadState();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      cancelled = true;
       window.clearInterval(timer);
-      window.removeEventListener(INBOX_CHANGED_EVENT, loadUnreadState);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
@@ -1061,23 +1067,36 @@ export default function Sidebar({
             classNames={{ root: styles.quickSettingsPopover }}
             destroyOnHidden
             content={
-              <SidebarSettingsPanel
-                version={version}
-                onClose={() => setSettingsOpen(false)}
-                onOpenDesktopMode={handleOpenDesktopMode}
-                onOpenSettings={handleOpenSettings}
-                authEnabled={authEnabled}
-                onOpenAccount={handleOpenAccount}
-                onLogout={handleLogout}
-              />
+              <div
+                role="dialog"
+                aria-label={t("sidebar.quickMenu.settings", "Settings")}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setSettingsOpen(false);
+                  settingsTriggerRef.current?.focus();
+                }}
+              >
+                <SidebarSettingsPanel
+                  version={version}
+                  onClose={() => setSettingsOpen(false)}
+                  onOpenDesktopMode={handleOpenDesktopMode}
+                  onOpenSettings={handleOpenSettings}
+                  authEnabled={authEnabled}
+                  onOpenAccount={handleOpenAccount}
+                  onLogout={handleLogout}
+                />
+              </div>
             }
           >
             <button
+              ref={settingsTriggerRef}
               type="button"
               data-press
               title={t("sidebar.quickMenu.settings", "Settings")}
               aria-label={t("sidebar.quickMenu.settings", "Settings")}
-              aria-haspopup="menu"
+              aria-haspopup="dialog"
               aria-expanded={settingsOpen}
               className={collapsed ? styles.collapseToggle : skin.identity}
             >

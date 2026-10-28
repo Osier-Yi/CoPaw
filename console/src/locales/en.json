@@ -1135,7 +1135,6 @@
     "selectBuiltin": "Builtin",
     "selectNone": "None",
     "noPoolSkills": "No skills available in pool",
-    "addSkillsToAgent": "Add Skills",
     "backend": {
       "column": "Backend",
       "eyebrow": "Agent architecture",
@@ -4575,6 +4574,7 @@
       "modeTooltip": "Controls how the scanner handles unsafe skills: block, warn only, or disabled",
       "modeBlock": "Block",
       "modeWarn": "Warn Only",
+      "modeOff": "Off",
       "timeout": "Scan Timeout (seconds)",
       "timeoutTooltip": "Maximum time to wait for a scan to complete (5-300 seconds)",
       "saveSuccess": "Skill scanner settings saved",
@@ -5752,6 +5752,9 @@
     }
   },
   "preview": {
+    "unavailable": "Preview unavailable",
+    "showDetails": "View details",
+    "hideDetails": "Hide details",
     "error": {
       "SENSITIVE_FILE_BLOCKED": "This file is blocked by File Guard (sensitive file protection).",
       "OUTSIDE_WORKSPACE": "This file is outside the workspace scope. Enable \"Allow Console Preview Outside Workspace\" in Settings → Security → File Guard.",
