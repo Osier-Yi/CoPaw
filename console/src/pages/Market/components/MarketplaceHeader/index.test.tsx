@@ -50,10 +50,10 @@ describe("MarketplaceHeader", () => {
     },
   );
 
-  it("does not add the community entrance on mobile", () => {
+  it("keeps the community entrance on mobile", () => {
     mocks.isMobile.mockReturnValue(true);
     renderWithProviders(<MarketplaceHeader activeSection="apps" />);
-    expect(screen.queryByText("Community")).not.toBeInTheDocument();
+    expect(screen.getByText("Community")).toBeInTheDocument();
     expect(screen.getByText("Apps")).toBeInTheDocument();
   });
 

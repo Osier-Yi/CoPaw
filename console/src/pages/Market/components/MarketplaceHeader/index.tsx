@@ -3,7 +3,6 @@ import { Tabs, type TabsProps } from "@agentscope-ai/design";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import styles from "./index.module.less";
 
 export type MarketplaceSection = "apps" | "plugins" | "skills" | "community";
@@ -25,7 +24,6 @@ export function MarketplaceHeader({
   extra,
 }: MarketplaceHeaderProps) {
   const { t } = useTranslation();
-  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
@@ -33,9 +31,7 @@ export function MarketplaceHeader({
     { key: "apps", label: t("nav.apps", "Apps") },
     { key: "plugins", label: t("nav.plugins", "Plugins") },
     { key: "skills", label: t("nav.skills", "Skills") },
-    ...(!isMobile || activeSection === "community"
-      ? [{ key: "community", label: t("communityCompose.nav", "Community") }]
-      : []),
+    { key: "community", label: t("communityCompose.nav", "Community") },
   ];
 
   const handleChange = (section: string) => {

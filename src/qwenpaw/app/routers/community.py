@@ -11,7 +11,7 @@ from urllib.parse import quote, parse_qs, urlsplit
 
 import httpx
 from markdown_it import MarkdownIt
-from fastapi import APIRouter, HTTPException, Request, Query, Path
+from fastapi import APIRouter, HTTPException, Request, Query, Path, File, UploadFile
 from pydantic import BaseModel, Field
 
 from .community_connection import get_service, _call
@@ -69,7 +69,7 @@ async def community_posts(
         "discussion",
         "official_announcement",
     ] = "all",
-    sort: Literal["latest", "recommended"] = "recommended",
+    sort: Literal["latest", "recommended", "waiting"] = "recommended",
 ):
     return await _call(
         get_service(request).community_request(
@@ -129,6 +129,7 @@ class CommunityCommentRequest(BaseModel):
     )
     account_id: str = Field(min_length=1, max_length=128)
     kind: Literal["comment", "answer"] = "comment"
+    media_ids: list[str] | None = None
 
 
 @router.post("/posts/{post_id}/comments")
@@ -150,7 +151,53 @@ async def post_community_comment(
                 "content": body.content,
                 "parent_id": body.parent_id,
                 "kind": body.kind,
+                **({"media_ids": body.media_ids} if body.media_ids else {}),
             },
+        ),
+    )
+
+
+@router.post("/media")
+async def community_media_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    purpose: Literal["body", "comment"] = "comment",
+    account_id: str = Query(min_length=1, max_length=128),
+):
+    data = await file.read()
+    # Body media carries videos (platform cap 500MB); comments stay image-sized.
+    limit = 500 * 1024 * 1024 if purpose == "body" else 10 * 1024 * 1024
+    if len(data) > limit:
+        raise HTTPException(status_code=413, detail="media_too_large")
+    return await _call(
+        get_service(request).community_request(
+            "POST",
+            "/api/v1/community/media",
+            account_id=account_id,
+            params={"purpose": purpose},
+            files={
+                "file": (
+                    file.filename or "image.png",
+                    data,
+                    file.content_type or "application/octet-stream",
+                )
+            },
+            timeout=60,
+        ),
+    )
+
+
+@router.delete("/media/{media_id}")
+async def community_media_delete(
+    request: Request,
+    media_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
+    account_id: str = Query(min_length=1, max_length=128),
+):
+    return await _call(
+        get_service(request).community_request(
+            "DELETE",
+            f"/api/v1/community/media/{media_id}",
+            account_id=account_id,
         ),
     )
 
@@ -228,6 +275,64 @@ async def like_community_comment(
     )
 
 
+@router.post("/posts/{post_id}/comments/{comment_id}/accept")
+async def accept_community_comment(
+    body: CommunityInteractionRequest,
+    request: Request,
+    post_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
+    comment_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
+):
+    return await _call(
+        get_service(request).community_request(
+            "POST",
+            f"/api/v1/community/articles/{post_id}/comments/{comment_id}/accept",
+            account_id=body.account_id,
+        ),
+    )
+
+
+@router.delete("/posts/{post_id}/comments/{comment_id}/accept")
+async def unaccept_community_comment(
+    body: CommunityInteractionRequest,
+    request: Request,
+    post_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
+    comment_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
+):
+    return await _call(
+        get_service(request).community_request(
+            "DELETE",
+            f"/api/v1/community/articles/{post_id}/comments/{comment_id}/accept",
+            account_id=body.account_id,
+        ),
+    )
+
+
+@router.get("/skills/{skill_id}")
+async def community_related_skill(
+    request: Request,
+    skill_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
+):
+    return await _call(
+        get_service(request).community_request(
+            "GET",
+            f"/api/v1/skills/{skill_id}",
+        ),
+    )
+
+
+@router.get("/plugins/{plugin_id}")
+async def community_related_plugin(
+    request: Request,
+    plugin_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
+):
+    return await _call(
+        get_service(request).community_request(
+            "GET",
+            f"/api/v1/plugins/{plugin_id}",
+        ),
+    )
+
+
 @router.get("/posts/{post_id}/resources")
 async def community_post_resources(
     request: Request,
@@ -286,7 +391,7 @@ class CommunityImageRequest(ReportScreenshot):
     reviewed: bool = False
 
 
-@router.post("/media")
+@router.post("/media/screenshot")
 async def upload_community_image(
     body: CommunityImageRequest,
     request: Request,

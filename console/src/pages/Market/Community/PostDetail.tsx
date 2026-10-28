@@ -1,19 +1,18 @@
-import { useEffect, useState } from "react";
-import { Alert, App, Avatar, Button, Segmented, Spin } from "antd";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, App, Avatar, Button, Spin } from "antd";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
-  Bookmark,
-  CircleCheck,
   ExternalLink,
-  Flag,
   Pencil,
   Trash2,
   MessageSquare,
   Share2,
+  Star,
   ThumbsUp,
 } from "lucide-react";
+import { SparkThumbsUpFill, SparkVisableLine } from "@agentscope-ai/icons";
 import {
   communityConnectionApi,
   type CommunityConnectionStatus,
@@ -21,20 +20,36 @@ import {
 import { openExternalLink } from "@/utils/openExternalLink";
 import { communityErrorKey } from "@/utils/communityError";
 import { communityPostsApi, type Post } from "./api";
+import AuthorBadges from "./AuthorBadges";
 import { PostBody } from "./PostBody";
 import { mediaUrl } from "./media";
 import { EditPostModal } from "./EditPostModal";
-import { Discussion } from "./Discussion";
+import { ArticleToc } from "./ArticleTocCard";
+import { RelatedResources } from "./RelatedResources";
+import { extractHtmlToc, parseMarkdownToc } from "./articleToc";
+import {
+  ArticleComments,
+  AnswersSection,
+  QuestionComments,
+} from "./Discussion";
 import styles from "./index.module.less";
 
 export function QuestionStatus({ post }: { post: Post }) {
   const { t } = useTranslation();
-  return post.article_type === "question" && post.qa_status === "solved" ? (
-    <span className={styles.solvedStatus}>
-      <CircleCheck size={14} aria-hidden="true" />
-      {t("communityPage.solved")}
+  if (post.article_type !== "question") return null;
+  const count = Math.max(0, post.accepted_answer_count ?? 0);
+  const solved = count > 0;
+  return (
+    <span
+      className={`${styles.answerBadge} ${
+        solved ? styles.answerBadgeSolved : styles.answerBadgeOpen
+      }`}
+    >
+      {solved
+        ? t("communityPage.solvedCount", { count })
+        : t("communityPage.solveCount", { count })}
     </span>
-  ) : null;
+  );
 }
 export function PostDetail({ id }: { id: string }) {
   const { t } = useTranslation();
@@ -51,9 +66,67 @@ export function PostDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState<"like" | "favorite" | "delete">();
   const [editing, setEditing] = useState(false);
   const [reload, setReload] = useState(0);
-  const [tab, setTab] = useState<"answer" | "comment">("answer");
   const [focusRequest, setFocusRequest] = useState(0);
+  const [answerRequest, setAnswerRequest] = useState(0);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barHidden, setBarHidden] = useState(false);
+  const [barPinned, setBarPinned] = useState(false);
   const question = post?.article_type === "question";
+  const tocItems = useMemo(
+    () =>
+      post?.body_html?.trim()
+        ? extractHtmlToc(post.body_html)
+        : parseMarkdownToc(post?.body_text || post?.summary || ""),
+    [post],
+  );
+  // Mobile only: reading deeper (scroll down) fades the pinned interaction
+  // bar away, scrolling back up brings it back; at its rested position or on
+  // wide layouts the bar always stays visible.
+  useEffect(() => {
+    const node = barRef.current;
+    if (!node) return;
+    const media = window.matchMedia("(max-width: 600px)");
+    let el: HTMLElement | null = node.parentElement;
+    while (el) {
+      const { overflowY } = getComputedStyle(el);
+      if (overflowY === "auto" || overflowY === "scroll") break;
+      el = el.parentElement;
+    }
+    const container = el;
+    if (!container) return;
+    // While the sticky bar floats at the scrollport bottom it gets the
+    // rounded floating-card look; at its rested position the plain divider.
+    const evaluate = () => {
+      const pinned =
+        node.getBoundingClientRect().bottom >=
+        container.getBoundingClientRect().bottom - 14;
+      setBarPinned(pinned);
+      return pinned;
+    };
+    let last = container.scrollTop;
+    const onScroll = () => {
+      const top = container.scrollTop;
+      const delta = top - last;
+      if (Math.abs(delta) < 8) return;
+      last = top;
+      const pinned = evaluate();
+      if (!media.matches) {
+        setBarHidden(false);
+        return;
+      }
+      setBarHidden(pinned && delta > 0);
+    };
+    const onBreak = () => {
+      if (!media.matches) setBarHidden(false);
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    media.addEventListener("change", onBreak);
+    evaluate();
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      media.removeEventListener("change", onBreak);
+    };
+  }, [post?.id]);
   const ownPost =
     connection?.status === "connected" &&
     !!connection.account?.id &&
@@ -149,9 +222,24 @@ export function PostDetail({ id }: { id: string }) {
     }
   };
   const focusDiscussion = (target: "answer" | "comment") => {
-    setTab(target);
-    setFocusRequest((v) => v + 1);
+    if (target === "answer") setAnswerRequest((v) => v + 1);
+    else setFocusRequest((v) => v + 1);
   };
+  const applyAccepted = (detail: Partial<Post>) =>
+    setPost((prev) =>
+      prev
+        ? {
+            ...prev,
+            accepted_comment_ids:
+              detail.accepted_comment_ids ?? prev.accepted_comment_ids,
+            accepted_comment_id:
+              detail.accepted_comment_id ?? prev.accepted_comment_id,
+            accepted_answer_count:
+              detail.accepted_answer_count ?? prev.accepted_answer_count,
+            qa_status: detail.qa_status ?? prev.qa_status,
+          }
+        : prev,
+    );
   const share = async () => {
     try {
       await navigator.clipboard.writeText(platformUrl);
@@ -162,218 +250,321 @@ export function PostDetail({ id }: { id: string }) {
   };
   return (
     <>
-      <Link className={styles.backLink} to={`/market?${backParams}`}>
-        <ArrowLeft size={16} aria-hidden="true" />
-        {t("communityPage.back")}
-      </Link>
-      {error && (
-        <Alert
-          type="error"
-          message={t(error)}
-          description={t("communityPage.loadErrorHelp")}
-          action={
-            <Button onClick={() => setReload((v) => v + 1)}>
-              {t("communityPage.retry")}
-            </Button>
-          }
-        />
-      )}
-      {editing && post && connection?.account && (
-        <EditPostModal
-          post={post}
-          accountId={connection.account.id}
-          onClose={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            setReload((v) => v + 1);
-          }}
-        />
-      )}
-      <Spin spinning={loading}>
-        {post && (
-          <>
-            <article className={styles.articleCard}>
-              <div className={styles.articleEyebrow}>
-                {post.article_type_label ||
-                  t(
-                    question
-                      ? "communityPage.question"
-                      : "communityPage.article",
-                  )}{" "}
-                <QuestionStatus post={post} />
-              </div>
-              <h1 className={styles.articleTitle}>{post.title}</h1>
-              <div className={styles.authorRow}>
-                <Avatar size={32} src={mediaUrl(post.author_avatar_url)}>
-                  {post.author_name?.slice(0, 1)}
-                </Avatar>
-                <span className={styles.authorName}>{post.author_name}</span>
-                <time className={styles.meta}>
-                  {post.published_at?.slice(0, 10)}
-                </time>
-              </div>
-              {ownPost && (
-                <div className={styles.ownerActions}>
-                  <Button
-                    size="small"
-                    icon={<Pencil size={14} />}
-                    disabled={!!busy}
-                    title={nativeEdit ? t("communityPage.editHelp") : undefined}
-                    onClick={() => {
-                      if (nativeEdit)
-                        openExternalLink(
-                          `https://platform.agentscope.io/community/write?articleId=${encodeURIComponent(
-                            id,
-                          )}`,
-                        );
-                      else setEditing(true);
-                    }}
-                  >
-                    {t("communityPage.editPost")}
-                    {nativeEdit && <ExternalLink size={12} />}
-                  </Button>
-                  <Button
-                    size="small"
-                    type="text"
-                    danger
-                    icon={<Trash2 size={14} />}
-                    disabled={!!busy}
-                    loading={busy === "delete"}
-                    onClick={removePost}
-                  >
-                    {t("communityPage.deletePost")}
-                  </Button>
-                  {nativeEdit && (
-                    <span className={styles.meta}>
-                      {t("communityPage.editHelp")}
+      <div className={styles.detailHeader}>
+        <Link className={styles.backLink} to={`/market?${backParams}`}>
+          <ArrowLeft size={16} aria-hidden="true" />
+          {t("communityPage.back")}
+        </Link>
+        {post && <div className={styles.detailHeaderTitle}>{post.title}</div>}
+      </div>
+      <div className={styles.content}>
+        {error && (
+          <Alert
+            type="error"
+            message={t(error)}
+            description={t("communityPage.loadErrorHelp")}
+            action={
+              <Button onClick={() => setReload((v) => v + 1)}>
+                {t("communityPage.retry")}
+              </Button>
+            }
+          />
+        )}
+        {editing && post && connection?.account && (
+          <EditPostModal
+            post={post}
+            accountId={connection.account.id}
+            onClose={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false);
+              setReload((v) => v + 1);
+            }}
+          />
+        )}
+        <Spin spinning={loading && Boolean(post)} size="large">
+          {loading && !post && (
+            <div className={styles.spinFill}>
+              <Spin size="large" />
+            </div>
+          )}
+          {post && (
+            <div
+              className={`${styles.detailLayout} ${
+                tocItems.length ? "" : styles.detailLayoutNoToc
+              }`}
+            >
+              <div className={styles.detailMain}>
+                <article className={styles.articleCard}>
+                  <div className={styles.articleTagRow}>
+                    <span className={styles.postTag}>
+                      {post.article_type_label ||
+                        t(
+                          question
+                            ? "communityPage.question"
+                            : "communityPage.article",
+                        )}
                     </span>
+                    {(post.tags || []).map((tag) => (
+                      <span key={tag} className={styles.postTag}>
+                        {tag}
+                      </span>
+                    ))}
+                    <QuestionStatus post={post} />
+                  </div>
+                  <h1 className={styles.articleTitle}>{post.title}</h1>
+                  <div className={styles.authorRow}>
+                    <Avatar size={32} src={mediaUrl(post.author_avatar_url)}>
+                      {post.author_name?.slice(0, 1)}
+                    </Avatar>
+                    <span className={styles.authorName}>
+                      {post.author_name}
+                    </span>
+                    <AuthorBadges
+                      officialIconOnly
+                      identity_badge={post.identity_badge}
+                      identity_badges={post.identity_badges}
+                    />
+                    <time className={styles.meta}>
+                      {post.published_at?.slice(0, 10)}
+                    </time>
+                    {typeof post.view_count === "number" && (
+                      <span className={`${styles.meta} ${styles.viewCount}`}>
+                        <SparkVisableLine size={14} />
+                        {post.view_count}
+                      </span>
+                    )}
+                  </div>
+                  {ownPost && (
+                    <div className={styles.ownerActions}>
+                      <Button
+                        size="small"
+                        icon={<Pencil size={14} />}
+                        disabled={!!busy}
+                        title={
+                          nativeEdit ? t("communityPage.editHelp") : undefined
+                        }
+                        onClick={() => {
+                          if (nativeEdit)
+                            openExternalLink(
+                              `https://platform.agentscope.io/community/write?articleId=${encodeURIComponent(
+                                id,
+                              )}`,
+                            );
+                          else setEditing(true);
+                        }}
+                      >
+                        {t("communityPage.editPost")}
+                        {nativeEdit && <ExternalLink size={12} />}
+                      </Button>
+                      <Button
+                        size="small"
+                        type="text"
+                        danger
+                        icon={<Trash2 size={14} />}
+                        disabled={!!busy}
+                        loading={busy === "delete"}
+                        onClick={removePost}
+                      >
+                        {t("communityPage.deletePost")}
+                      </Button>
+                      {nativeEdit && (
+                        <span className={styles.meta}>
+                          {t("communityPage.editHelp")}
+                        </span>
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
-              <PostBody post={post} />
-              <div className={styles.articleActions}>
-                {question && (
-                  <Button
-                    type="primary"
-                    icon={<MessageSquare size={16} aria-hidden="true" />}
-                    onClick={() => focusDiscussion("answer")}
-                  >
-                    {t("communityPage.writeAnswer")}
-                  </Button>
-                )}
-                <Button
-                  aria-pressed={!!post.liked}
-                  className={post.liked ? styles.activeAction : undefined}
-                  loading={busy === "like"}
-                  disabled={!!busy}
-                  icon={<ThumbsUp size={16} aria-hidden="true" />}
-                  onClick={() => void interact("like")}
-                >
-                  {t(question ? "communityPage.helpful" : "communityPage.like")}{" "}
-                  {post.like_count || ""}
-                </Button>
-                {!question && (
-                  <Button
-                    aria-pressed={!!post.favorited}
-                    className={post.favorited ? styles.activeAction : undefined}
-                    loading={busy === "favorite"}
-                    disabled={!!busy}
-                    icon={<Bookmark size={16} aria-hidden="true" />}
-                    onClick={() => void interact("favorite")}
-                  >
-                    {t(
-                      post.favorited
-                        ? "communityPage.favorited"
-                        : "communityPage.favorite",
-                    )}{" "}
-                    {post.favorite_count || ""}
-                  </Button>
-                )}
-                <Button
-                  type="text"
-                  icon={<MessageSquare size={16} aria-hidden="true" />}
-                  onClick={() => focusDiscussion("comment")}
-                >
-                  {t(
-                    question
-                      ? "communityPage.commentQuestion"
-                      : "communityPage.comments",
+                  <RelatedResources
+                    skillIds={post.related_skill_ids}
+                    pluginIds={post.related_plugin_ids}
+                  />
+                  <div>
+                    <PostBody post={post} />
+                    {question && (
+                      <div className={styles.questionActionBar}>
+                        <button
+                          type="button"
+                          className={styles.writeAnswerBtn}
+                          onClick={() => focusDiscussion("answer")}
+                        >
+                          {t("communityPage.writeAnswer")}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.helpfulChip}
+                          aria-pressed={!!post.liked}
+                          disabled={!!busy}
+                          onClick={() => void interact("like")}
+                        >
+                          {post.liked ? (
+                            <SparkThumbsUpFill size={14} aria-hidden="true" />
+                          ) : (
+                            <ThumbsUp size={14} aria-hidden="true" />
+                          )}
+                          {t("communityPage.helpful")}
+                          {post.like_count ? (
+                            <>
+                              {" "}
+                              <span className={styles.barCount}>
+                                {post.like_count}
+                              </span>
+                            </>
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.plainAction}
+                          onClick={() => focusDiscussion("comment")}
+                        >
+                          {t("communityPage.commentQuestion")}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.plainAction}
+                          onClick={() => void share()}
+                        >
+                          <Share2 size={14} aria-hidden="true" />
+                          {t("communityPage.share")}
+                        </button>
+                      </div>
+                    )}
+                    {actionError && (
+                      <Alert type="error" message={t(actionError)} />
+                    )}
+                    {!question && (
+                      <div
+                        ref={barRef}
+                        className={`${styles.bottomBar} ${
+                          barPinned ? styles.bottomBarPinned : ""
+                        } ${barHidden ? styles.bottomBarHidden : ""}`}
+                      >
+                        <button
+                          type="button"
+                          className={`${styles.barAction} ${
+                            post.liked ? styles.barActionActive : ""
+                          }`}
+                          aria-pressed={!!post.liked}
+                          disabled={!!busy}
+                          onClick={() => void interact("like")}
+                        >
+                          {post.liked ? (
+                            <SparkThumbsUpFill size={18} aria-hidden="true" />
+                          ) : (
+                            <ThumbsUp size={18} aria-hidden="true" />
+                          )}
+                          <span>
+                            {t(
+                              question
+                                ? "communityPage.helpful"
+                                : "communityPage.like",
+                            )}
+                          </span>{" "}
+                          {post.like_count ? (
+                            <span className={styles.barCount}>
+                              {post.like_count}
+                            </span>
+                          ) : null}
+                        </button>
+                        {!question && (
+                          <button
+                            type="button"
+                            className={`${styles.barAction} ${
+                              post.favorited ? styles.barActionActive : ""
+                            }`}
+                            aria-pressed={!!post.favorited}
+                            disabled={!!busy}
+                            onClick={() => void interact("favorite")}
+                          >
+                            <Star
+                              size={18}
+                              fill={post.favorited ? "currentColor" : "none"}
+                              aria-hidden="true"
+                            />
+                            <span>
+                              {t(
+                                post.favorited
+                                  ? "communityPage.favorited"
+                                  : "communityPage.favorite",
+                              )}
+                            </span>{" "}
+                            {post.favorite_count ? (
+                              <span className={styles.barCount}>
+                                {post.favorite_count}
+                              </span>
+                            ) : null}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className={styles.barAction}
+                          onClick={() => focusDiscussion("comment")}
+                        >
+                          <MessageSquare size={18} aria-hidden="true" />
+                          <span>
+                            {t(
+                              question
+                                ? "communityPage.commentQuestion"
+                                : "communityPage.comments",
+                            )}
+                          </span>{" "}
+                          {post.comment_count ? (
+                            <span className={styles.barCount}>
+                              {post.comment_count}
+                            </span>
+                          ) : null}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.barAction}
+                          onClick={() => void share()}
+                        >
+                          <Share2 size={18} aria-hidden="true" />
+                          <span>{t("communityPage.share")}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {question && (
+                    <QuestionComments
+                      id={id}
+                      connection={connection}
+                      composeRequest={focusRequest}
+                    />
                   )}
-                </Button>
-                <Button
-                  type="text"
-                  icon={<Share2 size={16} aria-hidden="true" />}
-                  onClick={() => void share()}
-                >
-                  {t("communityPage.share")}
-                </Button>
-                <Button
-                  type="text"
-                  icon={<Flag size={14} aria-hidden="true" />}
-                  title={t("communityPage.reportHelp")}
-                  onClick={() => {
-                    openExternalLink(platformUrl);
-                    message.info(t("communityPage.reportHelp"));
-                  }}
-                >
-                  {t("communityPage.report")}
-                  <ExternalLink size={12} aria-hidden="true" />
-                </Button>
+                </article>
+                {question ? (
+                  <AnswersSection
+                    id={id}
+                    connection={connection}
+                    isAuthor={ownPost}
+                    acceptedIds={
+                      post.accepted_comment_ids ||
+                      (post.accepted_comment_id
+                        ? [post.accepted_comment_id]
+                        : [])
+                    }
+                    onAccepted={applyAccepted}
+                    focusRequest={answerRequest}
+                  />
+                ) : (
+                  <div className={styles.discussionCard}>
+                    <ArticleComments
+                      id={id}
+                      connection={connection}
+                      focusRequest={focusRequest}
+                    />
+                  </div>
+                )}
               </div>
-              {actionError && <Alert type="error" message={t(actionError)} />}
-            </article>
-            <div className={styles.discussionCard}>
-              {question && (
-                <Segmented
-                  className={styles.discussionTabs}
-                  aria-label={t("communityPage.discussionType")}
-                  value={tab}
-                  options={[
-                    { value: "answer", label: t("communityPage.answers") },
-                    {
-                      value: "comment",
-                      label: t("communityPage.commentQuestion"),
-                    },
-                  ]}
-                  onChange={(value) => setTab(value as "answer" | "comment")}
-                />
-              )}
-              {question ? (
-                <>
-                  <div hidden={tab !== "answer"}>
-                    <Discussion
-                      id={id}
-                      kind="answer"
-                      connection={connection}
-                      acceptedIds={
-                        post.accepted_comment_ids ||
-                        (post.accepted_comment_id
-                          ? [post.accepted_comment_id]
-                          : [])
-                      }
-                      focusRequest={tab === "answer" ? focusRequest : 0}
-                    />
-                  </div>
-                  <div hidden={tab !== "comment"}>
-                    <Discussion
-                      id={id}
-                      kind="comment"
-                      connection={connection}
-                      focusRequest={tab === "comment" ? focusRequest : 0}
-                    />
-                  </div>
-                </>
-              ) : (
-                <Discussion
-                  id={id}
-                  connection={connection}
-                  focusRequest={focusRequest}
-                />
+              {tocItems.length > 0 && (
+                <aside className={styles.detailSide}>
+                  <ArticleToc items={tocItems} />
+                </aside>
               )}
             </div>
-          </>
-        )}
-      </Spin>
+          )}
+        </Spin>
+      </div>
     </>
   );
 }

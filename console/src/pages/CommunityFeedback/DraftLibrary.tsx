@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Empty, Popconfirm, Spin, Tag, Pagination } from "antd";
+import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { communityConnectionApi } from "@/api/modules/community";
@@ -90,10 +91,12 @@ export function DraftLibrary({
   };
   return (
     <section className={styles.draftLibrary}>
-      <Button type="text" onClick={onBack}>
-        {t("communityPage.back")}
-      </Button>
-      <h1>{t("communityDrafts.title")}</h1>
+      <header className={styles.draftHeader}>
+        <Button type="text" icon={<ArrowLeft size={16} />} onClick={onBack}>
+          {t("communityPage.back")}
+        </Button>
+        <h1>{t("communityDrafts.title")}</h1>
+      </header>
       <p className={styles.hint}>{t("communityDrafts.help")}</p>
       {error && (
         <Alert

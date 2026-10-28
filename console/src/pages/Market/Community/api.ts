@@ -1,4 +1,13 @@
 import { request } from "@/api/request";
+import { getApiUrl } from "@/api/config";
+import { buildAuthHeaders } from "@/api/authHeaders";
+
+export interface IdentityBadge {
+  code: string;
+  label: string;
+  badge_kind?: "identity";
+  tier?: null;
+}
 
 export interface Post {
   id: string;
@@ -13,14 +22,23 @@ export interface Post {
   article_type_label?: string;
   qa_status?: "open" | "solved" | null;
   published_at?: string;
+  created_at?: string;
   comment_count?: number;
   like_count?: number;
   favorite_count?: number;
   liked?: boolean;
   favorited?: boolean;
   author_avatar_url?: string;
+  cover_url?: string;
+  view_count?: number;
+  tags?: string[];
+  accepted_answer_count?: number;
   accepted_comment_ids?: string[];
   accepted_comment_id?: string;
+  related_skill_ids?: string[];
+  related_plugin_ids?: string[];
+  identity_badge?: IdentityBadge | null;
+  identity_badges?: IdentityBadge[] | null;
 }
 export interface Comment {
   id: string;
@@ -34,6 +52,10 @@ export interface Comment {
   liked?: boolean;
   like_count?: number;
   author_avatar_url?: string;
+  author_user_id?: string;
+  reply_to_user_display_name?: string;
+  identity_badge?: IdentityBadge | null;
+  identity_badges?: IdentityBadge[] | null;
 }
 export interface Page<T> {
   items: T[];
@@ -88,6 +110,7 @@ export const communityPostsApi = {
     accountId: string,
     parentId?: string,
     kind: "answer" | "comment" = "comment",
+    mediaIds?: string[],
   ) =>
     request<Comment>(`/community/posts/${encodeURIComponent(id)}/comments`, {
       method: "POST",
@@ -96,6 +119,7 @@ export const communityPostsApi = {
         account_id: accountId,
         parent_id: parentId,
         kind,
+        ...(mediaIds?.length ? { media_ids: mediaIds } : {}),
       }),
     }),
   interact: (id: string, action: "like" | "favorite", accountId: string) =>
@@ -113,5 +137,80 @@ export const communityPostsApi = {
         method: "POST",
         body: JSON.stringify({ account_id: accountId }),
       },
+    ),
+  acceptComment: (postId: string, commentId: string, accountId: string) =>
+    request<Partial<Post>>(
+      `/community/posts/${encodeURIComponent(
+        postId,
+      )}/comments/${encodeURIComponent(commentId)}/accept`,
+      {
+        method: "POST",
+        body: JSON.stringify({ account_id: accountId }),
+      },
+    ),
+  unacceptComment: (postId: string, commentId: string, accountId: string) =>
+    request<Partial<Post>>(
+      `/community/posts/${encodeURIComponent(
+        postId,
+      )}/comments/${encodeURIComponent(commentId)}/accept`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ account_id: accountId }),
+      },
+    ),
+};
+export interface RelatedResource {
+  id: string;
+  title: string;
+  versionLabel?: string;
+  description?: string;
+  iconUrl?: string;
+}
+export const communityRelatedApi = {
+  skill: (id: string, signal?: AbortSignal) =>
+    request<Record<string, unknown>>(
+      `/community/skills/${encodeURIComponent(id)}`,
+      { signal },
+    ),
+  plugin: (id: string, signal?: AbortSignal) =>
+    request<Record<string, unknown>>(
+      `/community/plugins/${encodeURIComponent(id)}`,
+      { signal },
+    ),
+};
+export interface CommunityMedia {
+  media_id: string;
+  url: string;
+}
+export const communityMediaApi = {
+  // Multipart upload bypasses the json request helper so fetch can set the
+  // boundary itself; mirrors plugin.ts uploadPlugin.
+  upload: async (
+    file: File,
+    accountId: string,
+    purpose: "comment" | "body" = "comment",
+  ): Promise<CommunityMedia> => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(
+      getApiUrl(
+        `/community/media?purpose=${purpose}&account_id=${encodeURIComponent(
+          accountId,
+        )}`,
+      ),
+      { method: "POST", headers: buildAuthHeaders(), body: form },
+    );
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail ?? `Upload failed (${response.status})`);
+    }
+    return (await response.json()) as CommunityMedia;
+  },
+  remove: (mediaId: string, accountId: string) =>
+    request<null>(
+      `/community/media/${encodeURIComponent(
+        mediaId,
+      )}?account_id=${encodeURIComponent(accountId)}`,
+      { method: "DELETE" },
     ),
 };
