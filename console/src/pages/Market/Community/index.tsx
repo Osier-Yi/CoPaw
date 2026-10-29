@@ -173,6 +173,7 @@ export default function CommunityPage() {
   const [reload, setReload] = useState(0);
   const pageRef = useRef(1);
   const loadingMoreRef = useRef(false);
+  const pageControllerRef = useRef<AbortController | null>(null);
   useEffect(() => {
     if (id || editor || showingDrafts) return;
     const controller = new AbortController();
@@ -193,19 +194,32 @@ export default function CommunityPage() {
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      // An in-flight pagination request from the previous filter must not
+      // write its pages into the new list either.
+      pageControllerRef.current?.abort();
+    };
   }, [id, editor, showingDrafts, keyword, type, sort, reload]);
   const loadNextPage = useCallback(() => {
     if (loading || loadingMoreRef.current || entries.length >= total) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     const controller = new AbortController();
+    pageControllerRef.current = controller;
+    const before = entries;
     communityPostsApi
       .list(pageRef.current + 1, keyword, type, sort, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
-        setEntries((prev) => dedupePosts([...prev, ...result.items]));
-        setTotal(result.total);
+        const merged = dedupePosts([...before, ...result.items]);
+        setEntries(merged);
+        // The platform total can outrun the pages it actually serves: a
+        // page that adds nothing means the feed ended, so clamp the total
+        // or the sentinel would keep showing "loading" forever.
+        setTotal(
+          merged.length === before.length ? merged.length : result.total,
+        );
         pageRef.current += 1;
       })
       .catch(() => {
@@ -213,12 +227,14 @@ export default function CommunityPage() {
         if (!controller.signal.aborted) setAutoLoadBlocked(true);
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
-          loadingMoreRef.current = false;
-          setLoadingMore(false);
-        }
+        // Clear the flags even when aborted, or a cancelled request would
+        // wedge pagination for the next query.
+        if (pageControllerRef.current === controller)
+          pageControllerRef.current = null;
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
       });
-  }, [entries.length, keyword, loading, sort, total, type]);
+  }, [entries, keyword, loading, sort, total, type]);
   const update = (values: Record<string, string>) =>
     setParams({ tab: "community", keyword, type, sort, ...values });
   const changeType = (next: string) => {
@@ -231,6 +247,10 @@ export default function CommunityPage() {
     const next = new URLSearchParams(params);
     next.delete("post");
     next.delete("draft");
+    // The composer view outranks the draft library, so leaving it must
+    // clear compose (and the editor-only board) or the click looks dead.
+    next.delete("compose");
+    next.delete("article");
     next.set("drafts", "1");
     setParams(next);
   };
@@ -269,6 +289,9 @@ export default function CommunityPage() {
       next.delete("post");
       next.delete("drafts");
       next.delete("draft");
+      // The restored session's own type wins; a stale board from the
+      // current editor would override it in PostComposer.
+      next.delete("article");
       next.set("compose", resumable.initialType);
       // Reopen the original in-window session, including unsaved edits.
       if (resumable.id && resumable.draftId)

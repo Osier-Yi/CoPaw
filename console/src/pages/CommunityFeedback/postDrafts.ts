@@ -1,5 +1,6 @@
 import { request } from "@/api/request";
 import { removeWritingDraftSessions } from "./writingSession";
+import { splitReportResources } from "@/utils/communityResources";
 import type {
   DraftContent,
   PostDraft as StoredDraft,
@@ -7,17 +8,30 @@ import type {
 export type { DraftContent } from "./legacyPostDrafts";
 export interface PostDraft extends StoredDraft {
   editable?: boolean;
+  /** One-line content preview carried by the Platform draft list. */
+  summary?: string;
 }
 interface PlatformDraft extends Omit<PostDraft, "updatedAt"> {
   updated_at?: string;
 }
 const normalize = (draft: PlatformDraft): PostDraft => ({
   ...draft,
+  summary: draft.summary ?? "",
   updatedAt: draft.updated_at ? Date.parse(draft.updated_at) : Date.now(),
 });
-export async function listPostDrafts(account: string, page = 1) {
+export async function listPostDrafts(
+  account: string,
+  page = 1,
+  type?: "article" | "question",
+) {
+  const query = new URLSearchParams({
+    account_id: account,
+    page: String(page),
+  });
+  // Mirrors Platform's getMyDrafts type filter; omit it to list every draft.
+  if (type) query.set("draft_type", type);
   const result = await request<{ items: PlatformDraft[]; total: number }>(
-    `/community/drafts?account_id=${encodeURIComponent(account)}&page=${page}`,
+    `/community/drafts?${query}`,
   );
   return { items: result.items.map(normalize), total: result.total };
 }
@@ -43,7 +57,7 @@ export async function savePostDraft(
       title: content.title,
       content: content.content,
       article_type: content.type,
-      origins: content.resources.map((item) => item.origin),
+      ...splitReportResources(content.resources),
       media_ids: (content.media || [])
         .filter((item) => content.content.includes(item.url))
         .map((item) => item.media_id),

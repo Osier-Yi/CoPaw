@@ -35,6 +35,7 @@ import {
   type ReportResource,
 } from "@/api/modules/communityReport";
 import { redactReportText } from "./reportPrivacy";
+import { reportResourceIdentity } from "@/utils/communityResources";
 import { ScreenshotEditor } from "./ScreenshotEditor";
 import styles from "./index.module.less";
 
@@ -222,7 +223,7 @@ export function PostAssistance({
     };
   }, [agent, t]);
   const resourceKeys = resources
-    .map((item) => `${item.origin.resource_type}:${item.origin.resource_id}`)
+    .map((item) => reportResourceIdentity(item))
     .sort()
     .join("|");
   const evidenceContext = JSON.stringify([
@@ -271,7 +272,9 @@ export function PostAssistance({
     const controller = start("collect");
     try {
       const data = await collectCommunityDiagnostics(
-        resources.map((item) => item.origin),
+        // Diagnostics need a local installation; cloud-restored refs carry no
+        // origin and contribute nothing here.
+        resources.flatMap((item) => (item.origin ? [item.origin] : [])),
         minutes,
         session,
         agent,
@@ -304,8 +307,9 @@ export function PostAssistance({
             content: redactReportText(turn.content),
           })),
           resource_name: primary?.name || t("communityPage.title"),
-          resource_type: primary?.origin.resource_type || "plugin",
-          installed_version: primary?.origin.installed_version || "",
+          resource_type:
+            primary?.origin?.resource_type ?? primary?.type ?? "plugin",
+          installed_version: primary?.origin?.installed_version || "",
           article_type: articleType,
           resource_context: redactReportText(
             JSON.stringify(

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, it, expect, vi } from "vitest";
 import {
   BrowserRouter,
@@ -362,6 +368,99 @@ it("keeps unsaved cloud-draft edits when returning instead of fetching stale clo
         String(path).startsWith("/community/drafts/cloud?"),
       ),
   ).toHaveLength(1);
+});
+
+it("keeps text typed while an image upload is in flight", async () => {
+  let release!: (value: Response) => void;
+  const fetchMock = vi.fn().mockReturnValue(
+    new Promise<Response>((resolve) => {
+      release = resolve;
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    render(<PostComposer onClose={() => {}} initialType="discussion" />);
+    const body = await screen.findByLabelText("communityCompose.body");
+    fireEvent.change(body, { target: { value: "draft text" } });
+    const file = new File(["pixels"], "demo.png", { type: "image/png" });
+    fireEvent.change(
+      document.querySelector(
+        'input[accept="image/jpeg,image/png,image/gif,image/webp"]',
+      )!,
+      { target: { files: [file] } },
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    // Typing continues while the upload is pending; the snippet must splice
+    // into the latest body at the caret instead of the stale pre-upload
+    // content (which used to overwrite the typing entirely).
+    fireEvent.change(body, {
+      target: { value: "draft text plus new typing" },
+    });
+    fireEvent.focus(body);
+    (body as HTMLTextAreaElement).setSelectionRange(10, 10);
+    await act(async () => {
+      release({
+        ok: true,
+        json: async () => ({
+          media_id: "m1",
+          url: "https://example.com/i.png",
+        }),
+      } as Response);
+    });
+    await waitFor(() =>
+      expect(body).toHaveValue(
+        "draft text![demo.png](https://example.com/i.png) plus new typing",
+      ),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("republishes a cloud draft's related resource without an install origin", async () => {
+  // Regression: a draft restored from the Platform carries related ids that
+  // are NOT local installations. They must round-trip through `related`,
+  // never as a fabricated `origin` (which the backend validator rejects 422).
+  vi.mocked(request).mockImplementation(async (path) =>
+    String(path).startsWith("/community/drafts/cloud?")
+      ? ({
+          id: "cloud",
+          title: "Cloud title",
+          content: "Cloud body",
+          type: "discussion",
+          resources: [
+            { name: "demo-slug", type: "plugin", related_id: "demo-slug" },
+          ],
+          editable: true,
+        } as never)
+      : ({ id: "cloud" } as never),
+  );
+  render(
+    <PostComposer
+      onClose={() => {}}
+      draftId="cloud"
+      initialType="discussion"
+    />,
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("communityCompose.body")).toHaveValue(
+      "Cloud body",
+    ),
+  );
+  await waitFor(() => expect(screen.getByRole("checkbox")).toBeEnabled());
+  fireEvent.click(screen.getByRole("checkbox"));
+  const publishButton = await screen.findByRole("button", {
+    name: "communityCompose.publish",
+  });
+  await waitFor(() => expect(publishButton).toBeEnabled());
+  fireEvent.click(publishButton);
+  await screen.findByText("communityCompose.published");
+  const publish = vi
+    .mocked(request)
+    .mock.calls.find(([path]) => path === "/community/posts")!;
+  const body = JSON.parse(String(publish[1]?.body));
+  expect(body.related).toEqual([{ type: "plugin", id: "demo-slug" }]);
+  expect(body.origins).toEqual([]);
 });
 
 it("does not restore another community account's writing session", async () => {

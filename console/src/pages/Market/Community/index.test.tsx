@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/common_setup";
@@ -304,6 +304,112 @@ it("opens the local article and question composers without publishing", async ()
   ).toBeChecked();
   expect(openExternalLinkChecked).not.toHaveBeenCalled();
   expect(communityPostsApi.comment).not.toHaveBeenCalled();
+});
+
+it("leaves the composer for the draft library via the post menu", async () => {
+  renderWithProviders(<CommunityPage />, {
+    initialEntries: ["/market?tab=community&compose=question"],
+  });
+  expect(
+    await screen.findByRole("radio", { name: "communityPage.question" }),
+  ).toBeChecked();
+  fireEvent.click(screen.getByRole("button", { name: /communityPage.goPost/ }));
+  fireEvent.click(await screen.findByText("communityDrafts.title"));
+  // The draft library heading replaces the composer instead of the click
+  // being swallowed by the still-mounted editor view.
+  expect(
+    await screen.findByRole("heading", { name: "communityDrafts.title" }),
+  ).toBeInTheDocument();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("radio", { name: "communityPage.question" }),
+    ).toBeNull(),
+  );
+});
+
+/** Captures IntersectionObserver callbacks so tests can fire visibility. */
+function stubIntersectionObservers() {
+  const observers: { fire: () => void }[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        observers.push({
+          fire: () =>
+            callback(
+              [{ isIntersecting: true } as IntersectionObserverEntry],
+              {} as IntersectionObserver,
+            ),
+        });
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  return observers;
+}
+
+it("stops paginating once a page adds no new posts", async () => {
+  // Platform reports total=3 but page 2 comes back empty: the feed must
+  // end there instead of keeping the sentinel on "loading" forever.
+  vi.mocked(communityPostsApi.list)
+    .mockResolvedValueOnce({ items: [post], total: 3 })
+    .mockResolvedValueOnce({ items: [], total: 3 });
+  const observers = stubIntersectionObservers();
+  renderWithProviders(<CommunityPage />, {
+    initialEntries: ["/market?tab=community"],
+  });
+  expect(await screen.findByText("Community post")).toBeInTheDocument();
+  // entries(1) < total(3): the loading sentinel sits at the list bottom.
+  expect(screen.getByText("common.loading")).toBeInTheDocument();
+  act(() => observers[observers.length - 1].fire());
+  expect(await screen.findByText("market.noMoreResults")).toBeInTheDocument();
+  expect(communityPostsApi.list).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText("common.loading")).toBeNull();
+  // Scrolling again must not fire another request for a further page.
+  expect(observers).toHaveLength(1);
+});
+
+it("drops a stale page response when the filter changes mid-flight", async () => {
+  const observers = stubIntersectionObservers();
+  let releaseStale: (() => void) | null = null;
+  vi.mocked(communityPostsApi.list).mockImplementation(
+    (page: number, _keyword: string, type: string) => {
+      if (page > 1 && type === "all")
+        return new Promise((resolve) => {
+          releaseStale = () =>
+            resolve({
+              items: [{ ...post, id: "stale", title: "Stale post" }],
+              total: 4,
+            });
+        });
+      return Promise.resolve(
+        type === "discussion"
+          ? {
+              items: [{ ...post, id: "d1", title: "Discussion post" }],
+              total: 4,
+            }
+          : { items: [post], total: 4 },
+      );
+    },
+  );
+  renderWithProviders(<CommunityPage />, {
+    initialEntries: ["/market?tab=community"],
+  });
+  expect(await screen.findByText("Community post")).toBeInTheDocument();
+  // Start page 2 of the current filter, then switch filter while that
+  // request is still in flight.
+  act(() => observers[observers.length - 1].fire());
+  await waitFor(() => expect(communityPostsApi.list).toHaveBeenCalledTimes(2));
+  fireEvent.click(
+    screen.getByRole("button", { name: "communityPage.discussion" }),
+  );
+  expect(await screen.findByText("Discussion post")).toBeInTheDocument();
+  act(() => releaseStale?.());
+  await act(async () => {});
+  expect(screen.queryByText("Stale post")).toBeNull();
+  expect(screen.getByText("Discussion post")).toBeInTheDocument();
 });
 
 it("does not hide public content when account status cannot load", async () => {

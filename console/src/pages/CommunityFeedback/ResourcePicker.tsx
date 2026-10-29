@@ -5,15 +5,15 @@ import type { ReportResource } from "@/api/modules/communityReport";
 import { fetchMarketPlugins } from "@/api/modules/pluginMarket";
 import { marketApi } from "@/api/modules/market";
 import {
-  communityResourceIdentity as identity,
   pluginMarketResource,
+  reportResourceIdentity,
+  reportResourceKind,
   skillMarketResource,
 } from "@/utils/communityResources";
 import styles from "./index.module.less";
 
 type Source = "plugins" | "skills";
-const resourceKind = (item: ReportResource) =>
-  item.origin.resource_type === "skill" ? "skill" : "plugin";
+const resourceKind = (item: ReportResource) => reportResourceKind(item);
 interface Results {
   items: ReportResource[];
   page: number;
@@ -128,19 +128,21 @@ export function ResourcePicker({
     ...results.plugins.items,
     ...results.skills.items,
   ].forEach((item) => {
-    const key = identity(item.origin);
+    const key = reportResourceIdentity(item);
     if (!all.has(key)) all.set(key, item);
   });
   const seen = new Set<string>();
   const group = (label: string, items: ReportResource[], filter = false) => ({
     label,
     options: items.flatMap((item) => {
-      const key = identity(item.origin);
+      const key = reportResourceIdentity(item);
       if (
         resourceKind(item) !== kind ||
         seen.has(key) ||
         (filter &&
-          !`${item.name} ${item.origin.resource_id} ${item.local_id || ""}`
+          !`${item.name} ${item.origin?.resource_id ?? item.related_id ?? ""} ${
+            item.local_id || ""
+          }`
             .toLowerCase()
             .includes(query.trim().toLowerCase()))
       )
@@ -149,8 +151,10 @@ export function ResourcePicker({
       return [
         {
           value: key,
-          label: `${item.name} · ${item.origin.resource_type} · ${item.origin.resource_id}`,
-          title: `${item.name} · ${item.origin.resource_type}`,
+          label: `${item.name} · ${resourceKind(item)} · ${
+            item.origin?.resource_id ?? item.related_id ?? ""
+          }`,
+          title: `${item.name} · ${resourceKind(item)}`,
         },
       ];
     }),
@@ -181,8 +185,7 @@ export function ResourcePicker({
           {
             value: "skill",
             label: `Skill · ${
-              selected.filter((item) => item.origin.resource_type === "skill")
-                .length
+              selected.filter((item) => resourceKind(item) === "skill").length
             }/3`,
           },
         ]}
@@ -208,7 +211,7 @@ export function ResourcePicker({
         loading={results.plugins.loading || results.skills.loading}
         value={selected
           .filter((item) => resourceKind(item) === kind)
-          .map((item) => identity(item.origin))}
+          .map((item) => reportResourceIdentity(item))}
         options={groups}
         notFoundContent={t(
           results.plugins.loading || results.skills.loading
