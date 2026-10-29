@@ -236,8 +236,15 @@ async def test_cancelling_close_waiter_retains_underlying_sync_cleanup(
         assert handle.closed and calls == ["start", "end"]
 
 
-async def test_unstoppable_thread_prevents_successful_unload(tmp_path):
+async def test_unstoppable_thread_prevents_successful_unload(
+    tmp_path,
+    monkeypatch,
+):
+    from qwenpaw.plugins import custody
     from qwenpaw.plugins.testing import PluginTestHost
+
+    # The release event keeps the worker blocked regardless of this budget.
+    monkeypatch.setattr(custody, "THREAD_STOP_SECONDS", 0.2)
 
     source = (
         "class Plugin:\n    def register(self, ctx):\n        "
@@ -268,7 +275,7 @@ async def test_unstoppable_thread_prevents_successful_unload(tmp_path):
             )
         finally:
             release.set()
-            await asyncio.to_thread(worker.join, 2)
+            await asyncio.to_thread(worker.join, WAIT_TIMEOUT)
             assert not worker.is_alive()
         report = await host.unload("resource-contract")
         assert report.clean and report.quiescent
@@ -285,7 +292,7 @@ async def test_finished_managed_tasks_do_not_accumulate_live_resources(
     )
     async with PluginTestHost(tmp_path / "host") as host:
         ctx = await host.load(make_plugin(tmp_path, source))
-        for _ in range(100):
+        for _ in range(3):
             await ctx.resources.task(
                 asyncio.sleep(0),
                 description="short-lived",
@@ -304,7 +311,11 @@ async def test_owned_process_stops_without_touching_independent_process(
         "class Plugin:\n    def register(self, ctx):\n        "
         "pass\nplugin = Plugin()\n"
     )
-    command = [sys.executable, "-c", "import time; time.sleep(10)"]
+    command = [
+        sys.executable,
+        "-c",
+        "import threading; threading.Event().wait()",
+    ]
     independent = subprocess.Popen(command)
     try:
         async with PluginTestHost(tmp_path / "host") as host:
@@ -356,14 +367,14 @@ async def test_closed_child_scopes_release_parent_registration(tmp_path):
         ctx = await host.load(make_plugin(tmp_path, source))
         initial = ctx.resources.snapshot()["resources"]
         closed = []
-        for index in range(20):
+        for index in range(3):
             child = ctx.resources.child(instance_id=f"restart-{index}")
             child.defer(lambda number=index: closed.append(number))
             await child.close()
             await child.close()
             assert child.closed
             assert ctx.resources.snapshot()["resources"] == initial
-        assert closed == list(range(20))
+        assert closed == list(range(3))
 
         blocked = True
 

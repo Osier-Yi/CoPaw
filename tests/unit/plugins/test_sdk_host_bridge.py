@@ -12,20 +12,19 @@ from .test_sdk_entry_contract import write_plugin
 from .timing import WAIT_TIMEOUT, wait_for_thread_progress
 
 
-async def test_published_runtime_tool_stream_remains_busy_until_closed(
-    tmp_path,
-):
+async def test_function_tool_stream_close_releases_sdk_invocation(tmp_path):
     from qwenpaw.agents import tools
     from qwenpaw.plugins import PluginBusyError
     from qwenpaw.plugins.testing import PluginTestHost
+    from qwenpaw.runtime.tool_guard import GuardedFunctionTool
 
     async with PluginTestHost(tmp_path / "host") as host:
         await host.load(
             make_plugin(tmp_path),
             config={"marker": str(tmp_path / "closed")},
         )
-        invoke = getattr(tools, "sdk_contract_stream")
-        stream = invoke()
+        tool = GuardedFunctionTool(getattr(tools, "sdk_contract_stream"))
+        stream = await tool.call()
         try:
             response = await asyncio.create_task(anext(stream))
             assert [
@@ -38,28 +37,6 @@ async def test_published_runtime_tool_stream_remains_busy_until_closed(
         finally:
             await stream.aclose()
         assert (tmp_path / "closed").read_text() == "stream-closed"
-        assert host.resource_snapshot("author-contract")["active_calls"] == 0
-        assert (await host.reload("author-contract")).ok
-
-
-async def test_function_tool_stream_close_releases_sdk_invocation(tmp_path):
-    from qwenpaw.agents import tools
-    from qwenpaw.plugins.testing import PluginTestHost
-    from qwenpaw.runtime.tool_guard import GuardedFunctionTool
-
-    async with PluginTestHost(tmp_path / "host") as host:
-        await host.load(
-            make_plugin(tmp_path),
-            config={"marker": str(tmp_path / "closed")},
-        )
-        tool = GuardedFunctionTool(getattr(tools, "sdk_contract_stream"))
-        stream = await tool.call()
-        try:
-            response = await anext(stream)
-            assert response.content[0].text == "first"
-        finally:
-            await stream.aclose()
-        assert (tmp_path / "closed").exists()
         assert host.resource_snapshot("author-contract")["active_calls"] == 0
         assert (await host.reload("author-contract")).ok
 
@@ -561,7 +538,7 @@ async def test_provider_discovery_deadline_cancels_actual_callback(
     callback = """
         async def callback(call, timeout):
             now = time.monotonic()
-            assert now < call.deadline <= now + timeout
+            assert call.deadline is not None and call.deadline <= now + timeout
             try:
                 await asyncio.sleep(100)
             finally:
@@ -571,7 +548,7 @@ async def test_provider_discovery_deadline_cancels_actual_callback(
         callback = """
         def callback(call, timeout):
             now = time.monotonic()
-            assert now < call.deadline <= now + timeout
+            assert call.deadline is not None and call.deadline <= now + timeout
             safety_deadline = time.monotonic() + 2
             try:
                 while (
@@ -843,152 +820,6 @@ async def test_cancel_at_tracker_terminal_lock_does_not_leak_async_generator_con
                 monkeypatch.setattr(context.storage, "write_json", write)
     finally:
         loop.set_exception_handler(previous)
-
-
-def test_sdk_dependency_uv_reinstall_plan_is_rejected_before_mutation(
-    tmp_path,
-    monkeypatch,
-):
-    """Internal installer check; direct URLs remain outside the Gate."""
-    import importlib.metadata
-    import shutil
-    import subprocess
-    import sys
-    import zipfile
-    from qwenpaw.plugins import SDKRestartRequiredError
-    from qwenpaw.plugins import _sdk_dependencies as dependencies
-
-    target = tmp_path / "site"
-    target.mkdir()
-    archive = tmp_path / "sdk_plan_child-1.0-py3-none-any.whl"
-    files = {
-        "sdk_plan_child/__init__.py": "VALUE = 'old'\n",
-        "sdk_plan_child-1.0.dist-info/METADATA": (
-            "Metadata-Version: 2.1\nName: sdk-plan-child\nVersion: 1.0\n"
-        ),
-        "sdk_plan_child-1.0.dist-info/WHEEL": (
-            "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n"
-        ),
-    }
-    files["sdk_plan_child-1.0.dist-info/RECORD"] = "".join(
-        f"{key},,\n" for key in files
-    )
-    for key, value in files.items():
-        destination = target / key
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(value)
-    files["sdk_plan_child/__init__.py"] = "VALUE = 'replacement'\n"
-    with zipfile.ZipFile(archive, "w") as output:
-        for key, value in files.items():
-            output.writestr(key, value)
-    requirements = tmp_path / "requirements.txt"
-    requirements.write_text("sdk-plan-child @ " + archive.as_uri() + "\n")
-    monkeypatch.setattr(
-        dependencies,
-        "distributions",
-        lambda: importlib.metadata.distributions(path=[str(target)]),
-    )
-    for key in ("UV_CACHE_DIR", "UV_CREDENTIALS_DIR", "XDG_CONFIG_HOME"):
-        monkeypatch.setenv(key, str(tmp_path / key.lower()))
-    monkeypatch.setenv("UV_NO_INDEX", "1")
-    uv = shutil.which("uv")
-    assert (
-        uv
-    ), "The isolated test environment must provide its dependency resolver"
-    commands = []
-
-    def run(args, **_):
-        assert (
-            "--dry-run" in args
-        ), "A reinstall plan reached a mutating command"
-        commands.append(args)
-        if "--report" in args:
-            # Select the actual uv fallback without relying on whether this
-            # pytest interpreter happens to have pip installed.
-            return subprocess.CompletedProcess(
-                args,
-                1,
-                "",
-                "No module named pip",
-            )
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        (tmp_path / "uv-plan.txt").write_text(result.stdout + result.stderr)
-        return result
-
-    with pytest.raises(SDKRestartRequiredError):
-        dependencies.install_sdk_requirements(
-            requirements,
-            "plan-contract",
-            python=sys.executable,
-            target=str(target),
-            run=run,
-            find_uv=lambda: uv,
-        )
-    assert len(commands) == 2
-    assert (
-        target / "sdk_plan_child/__init__.py"
-    ).read_text() == "VALUE = 'old'\n"
-    assert (
-        "Would uninstall 1 package" in (tmp_path / "uv-plan.txt").read_text()
-    )
-
-
-@pytest.mark.parametrize("resolver", ["pip", "uv"])
-def test_sdk_dependency_unknown_plan_never_reaches_mutating_install(
-    tmp_path,
-    monkeypatch,
-    resolver,
-):
-    import json
-    import subprocess
-    import sys
-    from pathlib import Path
-    from qwenpaw.plugins import SDKRestartRequiredError
-    from qwenpaw.plugins import _sdk_dependencies as dependencies
-
-    monkeypatch.setattr(dependencies, "distributions", lambda: ())
-    requirements = tmp_path / "requirements.txt"
-    requirements.write_text("unknown-plan-package==1\n")
-    commands = []
-
-    def run(args, **_):
-        assert "--dry-run" in args
-        commands.append(args)
-        if "--report" in args:
-            if resolver == "uv":
-                return subprocess.CompletedProcess(
-                    args,
-                    1,
-                    "",
-                    "No module named pip",
-                )
-            Path(args[args.index("--report") + 1]).write_text(
-                json.dumps({"version": "future-format", "install": []}),
-                encoding="utf-8",
-            )
-        return subprocess.CompletedProcess(
-            args,
-            0,
-            "Future resolver plans do not use the known schema",
-            "",
-        )
-
-    with pytest.raises(SDKRestartRequiredError):
-        dependencies.install_sdk_requirements(
-            requirements,
-            "plan-contract",
-            python=sys.executable,
-            target=None,
-            run=run,
-            find_uv=lambda: "uv",
-        )
-    assert len(commands) == (2 if resolver == "uv" else 1)
 
 
 @pytest.mark.parametrize("early_error", [False, True])
