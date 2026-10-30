@@ -33,6 +33,7 @@ import {
 import { useReportScreenshots } from "./useReportScreenshots";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
+import { Link } from "react-router-dom";
 import {
   applyMarkdownAction,
   type MarkdownToolbarAction,
@@ -741,13 +742,13 @@ export function PostComposer({
             type="success"
             message={t("communityCompose.published")}
             description={
-              <a
-                href={`/market?tab=community&post=${encodeURIComponent(
+              <Link
+                to={`/market?tab=community&post=${encodeURIComponent(
                   published,
                 )}`}
               >
                 {t("communityCompose.view")}
-              </a>
+              </Link>
             }
           />
         ) : !status ? (

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Platform filters, error isolation and publishing category contracts."""
 
+import json
 from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -212,6 +213,109 @@ def test_draft_asl_round_trip_and_unsupported_embeds():
     ) == ("Embed", False)
 
 
+def test_draft_asl_renders_media_as_image_nodes():
+    from qwenpaw.app.community_drafts import draft_asl
+
+    content = (
+        "![shot.jpg](https://oss.example.com/shot.jpg)\n\n"
+        "![clip.mp4](https://oss.example.com/clip.mp4)"
+    )
+    asl = draft_asl(content)
+    tree = json.loads(asl)
+    images = [
+        node
+        for block in tree[1:]
+        for node in block
+        if isinstance(node, list) and node[0] == "img"
+    ]
+    # Both image and video become real img inline nodes; Platform turns
+    # video URLs into players via useVideoImagePlayers.
+    assert [img[1]["src"] for img in images] == [
+        "https://oss.example.com/shot.jpg",
+        "https://oss.example.com/clip.mp4",
+    ]
+    assert [img[1]["alt"] for img in images] == ["shot.jpg", "clip.mp4"]
+    # Media is structured nodes, never raw Markdown source in a text leaf.
+    assert "![" not in asl
+
+
+def test_draft_asl_media_round_trips_to_markdown():
+    from qwenpaw.app.community_drafts import (
+        _rich_markdown,
+        draft_asl,
+        draft_content,
+    )
+
+    content = "intro ![pic](https://oss.example.com/p.png) outro"
+    post = {"body_text": content, "body_asl": draft_asl(content)}
+    assert draft_content(post) == (content, True)
+    assert _rich_markdown(json.loads(draft_asl(content))) == content
+
+
+@pytest.mark.parametrize(
+    "href",
+    [
+        "https://example.com/a)b",  # unmatched ')' would close the link early
+        "https://example.com/Foo_(bar)",  # balanced parens (Wikipedia-style)
+        "https://example.com/a(b)c)",  # balanced pair plus a trailing ')'
+    ],
+)
+def test_draft_asl_escapes_parens_in_link_destination(href):
+    from markdown_it import MarkdownIt
+
+    from qwenpaw.app.community_drafts import _rich_markdown, draft_asl
+
+    # Parens in the destination must be escaped so the link is not truncated
+    # when Platform re-parses it. Escaping only ')' would leave balanced URLs
+    # like Foo_(bar) with an unmatched '(' that CommonMark rejects, so both
+    # '(' and ')' are escaped.
+    rendered = _rich_markdown(["root", ["p", ["a", {"href": href}, "link"]]])
+    tokens = MarkdownIt("commonmark").parse(rendered, {})
+    link_open = next(
+        child
+        for token in tokens
+        if token.type == "inline"
+        for child in token.children
+        if child.type == "link_open"
+    )
+    assert link_open.attrGet("href") == href
+    # Images use the same escaping and the ASL round trip stays lossless.
+    img = _rich_markdown(
+        ["root", ["p", ["img", {"src": href, "alt": "link"}]]]
+    )
+    assert img == "!" + rendered
+    assert _rich_markdown(json.loads(draft_asl(rendered))) == rendered
+
+
+def test_draft_content_recognizes_legacy_text_span_drafts():
+    from qwenpaw.app.community_drafts import _legacy_tree, draft_content
+
+    content = "![pic](https://oss.example.com/p.png)\nplain line"
+    legacy = json.dumps(_legacy_tree(content))
+    assert draft_content({"body_text": content, "body_asl": legacy}) == (
+        content,
+        True,
+    )
+
+
+def test_draft_asl_parses_rich_blocks():
+    from qwenpaw.app.community_drafts import draft_asl
+
+    tree = json.loads(
+        draft_asl(
+            "# Heading\n\n- item\n\n```python\nx = 1\n```\n\n"
+            "use `code` and [link](https://example.com)",
+        ),
+    )
+    assert [block[0] for block in tree[1:]] == ["h1", "ul", "code", "p"]
+    code = tree[3]
+    assert code[1]["code"] == "x = 1"
+    assert code[1]["syntax"] == "python"
+    inline_tags = [n[0] for n in tree[4][1:] if isinstance(n, list)]
+    assert "inlineCode" in inline_tags
+    assert "a" in inline_tags
+
+
 @pytest.mark.asyncio
 async def test_draft_write_cannot_modify_a_published_post(monkeypatch):
     service = SimpleNamespace(
@@ -232,3 +336,66 @@ async def test_draft_write_cannot_modify_a_published_post(monkeypatch):
         )
     assert error.value.detail == "not_a_draft"
     assert service.community_request.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "purpose,limit_attr",
+    [("body", "_BODY_MEDIA_LIMIT"), ("comment", "_COMMENT_MEDIA_LIMIT")],
+)
+async def test_media_upload_rejects_oversize_before_forwarding(
+    monkeypatch,
+    purpose,
+    limit_attr,
+):
+    # Shrink the limit so an oversized upload is exercised without buffering
+    # hundreds of megabytes; the handler must 413 before forwarding upstream.
+    monkeypatch.setattr(module, limit_attr, 8)
+    service = SimpleNamespace(
+        community_request=AsyncMock(return_value={"media_id": "m"}),
+    )
+    monkeypatch.setattr(module, "get_service", lambda _: service)
+    app = FastAPI()
+    app.include_router(module.router)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://localhost",
+    ) as client:
+        response = await client.post(
+            "/community/media",
+            params={"purpose": purpose, "account_id": "alice"},
+            files={"file": ("big.bin", b"x" * 64, "application/octet-stream")},
+        )
+    assert response.status_code == 413
+    assert response.json() == {"detail": "media_too_large"}
+    service.community_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_media_upload_forwards_payload_within_limit(monkeypatch):
+    monkeypatch.setattr(module, "_COMMENT_MEDIA_LIMIT", 1024)
+    # Force several chunks so the reassembled payload is verified byte-exact.
+    monkeypatch.setattr(module, "_MEDIA_CHUNK_SIZE", 4)
+    service = SimpleNamespace(
+        community_request=AsyncMock(return_value={"media_id": "m1"}),
+    )
+    monkeypatch.setattr(module, "get_service", lambda _: service)
+    app = FastAPI()
+    app.include_router(module.router)
+    payload = b"image-bytes" * 4
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://localhost",
+    ) as client:
+        response = await client.post(
+            "/community/media",
+            params={"purpose": "comment", "account_id": "alice"},
+            files={"file": ("pic.png", payload, "image/png")},
+        )
+    assert response.status_code == 200
+    assert response.json() == {"media_id": "m1"}
+    call = service.community_request.call_args
+    assert call.args == ("POST", "/api/v1/community/media")
+    assert call.kwargs["params"] == {"purpose": "comment"}
+    assert call.kwargs["files"]["file"] == ("pic.png", payload, "image/png")
+    assert call.kwargs["timeout"] == 60

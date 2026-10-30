@@ -6,7 +6,16 @@ import {
   useRef,
   useState,
 } from "react";
-import { Alert, Button, Dropdown, Empty, Input, Spin, Tabs } from "antd";
+import {
+  Alert,
+  Avatar,
+  Button,
+  Dropdown,
+  Empty,
+  Input,
+  Spin,
+  Tabs,
+} from "antd";
 import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { MessageSquare, RefreshCw, ThumbsUp } from "lucide-react";
@@ -102,6 +111,7 @@ export default function CommunityPage() {
       : undefined;
   const [resumable, setResumable] = useState<WritingSession>();
   const [accountName, setAccountName] = useState<string | null>(null);
+  const [accountAvatar, setAccountAvatar] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
     if (!editor) {
@@ -114,6 +124,7 @@ export default function CommunityPage() {
               ? status.account
               : null;
           setAccountName(connected ? connected.display_name : null);
+          setAccountAvatar(connected ? connected.avatar_url ?? null : null);
           setResumable(
             connected ? latestWritingSession(connected.id) : undefined,
           );
@@ -122,6 +133,7 @@ export default function CommunityPage() {
           if (active) {
             setResumable(undefined);
             setAccountName(null);
+            setAccountAvatar(null);
           }
         });
     }
@@ -329,7 +341,11 @@ export default function CommunityPage() {
   const headerActions = (
     <div className={styles.headerActions}>
       <Link to="/settings/community" className={styles.accountBtn}>
-        <SparkUserLine />
+        <Avatar
+          size={20}
+          src={mediaUrl(accountAvatar ?? undefined)}
+          icon={<SparkUserLine />}
+        />
         <span className={styles.accountLabel} title={accountName || undefined}>
           {accountName || t("communityPage.account")}
         </span>

@@ -22,7 +22,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
-from .community_connection import get_service, _call
+from .community_connection import get_service, call
 from ..community_connection import CommunityConnectionError
 from ..community_report import ReportScreenshot
 from ..community_drafts import draft_asl, draft_content
@@ -79,7 +79,7 @@ async def community_posts(
     ] = "all",
     sort: Literal["latest", "recommended", "waiting"] = "recommended",
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "GET",
             "/api/v1/community/articles",
@@ -99,7 +99,7 @@ async def community_post(
     request: Request,
     post_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "GET",
             f"/api/v1/community/articles/{post_id}",
@@ -115,7 +115,7 @@ async def community_comments(
     page: int = Query(1, ge=1, le=10000),
     kind: Literal["answer", "comment"] | None = None,
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "GET",
             f"/api/v1/community/articles/{post_id}/comments",
@@ -150,7 +150,7 @@ async def post_community_comment(
         raise HTTPException(status_code=422, detail="empty_comment")
     if body.kind == "answer" and body.parent_id:
         raise HTTPException(status_code=422, detail="answer_must_be_top_level")
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "POST",
             f"/api/v1/community/articles/{post_id}/comments",
@@ -165,6 +165,12 @@ async def post_community_comment(
     )
 
 
+# Body media may include videos; comments use the smaller image limit.
+_BODY_MEDIA_LIMIT = 500 * 1024 * 1024
+_COMMENT_MEDIA_LIMIT = 10 * 1024 * 1024
+_MEDIA_CHUNK_SIZE = 1024 * 1024
+
+
 @router.post("/media")
 async def community_media_upload(
     request: Request,
@@ -172,12 +178,18 @@ async def community_media_upload(
     purpose: Literal["body", "comment"] = "comment",
     account_id: str = Query(min_length=1, max_length=128),
 ):
-    data = await file.read()
-    # Body media may include videos; comments use the smaller image limit.
-    limit = 500 * 1024 * 1024 if purpose == "body" else 10 * 1024 * 1024
-    if len(data) > limit:
-        raise HTTPException(status_code=413, detail="media_too_large")
-    return await _call(
+    limit = _BODY_MEDIA_LIMIT if purpose == "body" else _COMMENT_MEDIA_LIMIT
+    # Stream the upload and abort the moment it exceeds the limit, so an
+    # oversized body is never fully buffered into memory before rejection.
+    chunks: list[bytes] = []
+    size = 0
+    while chunk := await file.read(_MEDIA_CHUNK_SIZE):
+        size += len(chunk)
+        if size > limit:
+            raise HTTPException(status_code=413, detail="media_too_large")
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    return await call(
         get_service(request).community_request(
             "POST",
             "/api/v1/community/media",
@@ -201,7 +213,7 @@ async def community_media_delete(
     media_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
     account_id: str = Query(min_length=1, max_length=128),
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "DELETE",
             f"/api/v1/community/media/{media_id}",
@@ -222,7 +234,7 @@ async def _owned_post(request: Request, post_id: str, account_id: str):
     if not connection or connection["account_id"] != account_id:
         raise HTTPException(status_code=409, detail="connection_changed")
     service = get_service(request)
-    post = await _call(
+    post = await call(
         service.community_request(
             "GET",
             f"/api/v1/community/articles/{post_id}",
@@ -243,7 +255,7 @@ async def delete_community_post(
     await _owned_post(request, post_id, body.account_id)
     service = get_service(request)
     # The service checks the account again immediately before the write.
-    return await _call(
+    return await call(
         service.community_request(
             "DELETE",
             f"/api/v1/community/articles/{post_id}",
@@ -259,7 +271,7 @@ async def interact_with_community_post(
     action: Literal["like", "favorite"],
     post_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "POST",
             f"/api/v1/community/articles/{post_id}/{action}",
@@ -274,7 +286,7 @@ async def like_community_comment(
     request: Request,
     comment_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "POST",
             f"/api/v1/community/comments/{comment_id}/like",
@@ -290,7 +302,7 @@ async def accept_community_comment(
     post_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
     comment_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "POST",
             f"/api/v1/community/articles/{post_id}"
@@ -307,7 +319,7 @@ async def unaccept_community_comment(
     post_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
     comment_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "DELETE",
             f"/api/v1/community/articles/{post_id}"
@@ -322,7 +334,7 @@ async def community_related_skill(
     request: Request,
     skill_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "GET",
             f"/api/v1/skills/{skill_id}",
@@ -335,7 +347,7 @@ async def community_related_plugin(
     request: Request,
     plugin_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
 ):
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "GET",
             f"/api/v1/plugins/{plugin_id}",
@@ -350,7 +362,7 @@ async def community_post_resources(
 ):
     """Resolve all Skill/Plugin links from the current post."""
     service = get_service(request)
-    post = await _call(
+    post = await call(
         service.community_request(
             "GET",
             f"/api/v1/community/articles/{post_id}",
@@ -412,7 +424,7 @@ async def upload_community_image(
     header, encoded = body.data_url.split(",", 1)
     mime = header[5:].split(";", 1)[0]
     extension = mime.split("/", 1)[1]
-    result = await _call(
+    result = await call(
         get_service(request).community_request(
             "POST",
             "/api/v1/community/media",
@@ -507,7 +519,7 @@ async def publish_community_post(body: CommunityPostRequest, request: Request):
     if not body.title.strip() or not body.content.strip():
         raise HTTPException(status_code=422, detail="empty_post")
     service = get_service(request)
-    status = await _call(service.status(local=False))
+    status = await call(service.status(local=False))
     if not status.get("account") or status["account"]["id"] != body.account_id:
         raise HTTPException(status_code=409, detail="community_login_required")
     payload = await _community_post_payload(body)
@@ -531,7 +543,7 @@ async def publish_community_post(body: CommunityPostRequest, request: Request):
             if body.article_type == "question"
             else "/api/v1/community/articles"
         )
-    return await _call(
+    return await call(
         service.community_request(
             "POST",
             endpoint,
@@ -640,7 +652,7 @@ def _draft_view(post: dict) -> dict:
 
 
 async def _owned_draft(request: Request, draft_id: str, account_id: str):
-    post = await _call(
+    post = await call(
         get_service(request).community_request(
             "GET",
             f"/api/v1/community/articles/{draft_id}",
@@ -693,7 +705,7 @@ async def community_drafts(
     # omit it to list every draft, exactly like the Platform front.
     if draft_type:
         params["type"] = draft_type
-    data = await _call(
+    data = await call(
         get_service(request).community_request(
             "GET",
             "/api/v1/community/me/drafts",
@@ -720,7 +732,7 @@ async def community_draft(
 async def save_community_draft(body: CommunityDraftRequest, request: Request):
     # Validate the account before resolving associated resources.
     service = get_service(request)
-    status = await _call(service.status(local=False))
+    status = await call(service.status(local=False))
     if not status.get("account") or status["account"]["id"] != body.account_id:
         raise HTTPException(status_code=409, detail="community_login_required")
     post = None
@@ -736,7 +748,7 @@ async def save_community_draft(body: CommunityDraftRequest, request: Request):
     endpoint = f"/api/v1/community/{kind}/drafts"
     if body.draft_id:
         endpoint += f"/{body.draft_id}"
-    result = await _call(
+    result = await call(
         service.community_request(
             "PUT",
             endpoint,
@@ -754,7 +766,7 @@ async def delete_community_draft(
     draft_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,128}$"),
 ):
     await _owned_draft(request, draft_id, body.account_id)
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "DELETE",
             f"/api/v1/community/articles/drafts/{draft_id}",
@@ -803,7 +815,7 @@ async def edit_community_post(
     kind = (
         "questions" if post.get("article_type") == "question" else "articles"
     )
-    return await _call(
+    return await call(
         get_service(request).community_request(
             "PUT",
             f"/api/v1/community/{kind}/{post_id}",
