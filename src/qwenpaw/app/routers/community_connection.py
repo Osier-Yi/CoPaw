@@ -54,7 +54,7 @@ def is_local_request(request: Request) -> bool:
     return True
 
 
-async def _call(awaitable):
+async def call(awaitable):
     try:
         return await awaitable
     except CommunityConnectionError as exc:
@@ -68,32 +68,32 @@ async def _call(awaitable):
 
 @router.get("")
 async def get_connection_status(request: Request):
-    return await _call(
+    return await call(
         get_service(request).status(local=is_local_request(request)),
     )
 
 
 @router.post("/start")
 async def start_connection(request: Request):
-    return await _call(
+    return await call(
         get_service(request).start(local=is_local_request(request)),
     )
 
 
 @router.get("/authorization/{flow_id}")
 async def get_authorization_status(flow_id: str, request: Request):
-    return await _call(get_service(request).authorization_status(flow_id))
+    return await call(get_service(request).authorization_status(flow_id))
 
 
 @router.delete("/authorization/{flow_id}")
 async def cancel_authorization(flow_id: str, request: Request):
-    await _call(get_service(request).cancel(flow_id))
+    await call(get_service(request).cancel(flow_id))
     return {"cancelled": True}
 
 
 @router.delete("")
 async def disconnect_community(request: Request):
-    return await _call(get_service(request).disconnect())
+    return await call(get_service(request).disconnect())
 
 
 class SyncSettings(BaseModel):
@@ -114,11 +114,11 @@ class SyncSettings(BaseModel):
 
 @router.patch("/sync")
 async def update_sync_settings(body: SyncSettings, request: Request):
-    return await _call(
+    return await call(
         get_service(request).set_sync(body.enabled, body.message_types),
     )
 
 
 @router.post("/sync")
 async def sync_community(request: Request):
-    return await _call(get_service(request).sync_once())
+    return await call(get_service(request).sync_once())

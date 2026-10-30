@@ -1,10 +1,12 @@
 import {
   act,
   fireEvent,
-  render,
+  render as rtlRender,
   screen,
   waitFor,
+  type RenderOptions,
 } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { beforeEach, it, expect, vi } from "vitest";
 import {
   BrowserRouter,
@@ -12,6 +14,7 @@ import {
   Routes,
   Route,
   Link,
+  useSearchParams,
 } from "react-router-dom";
 import { PostComposer } from "./PostComposer";
 import { communityConnectionApi } from "@/api/modules/community";
@@ -61,6 +64,18 @@ vi.mock("@/api/request", () => ({ request: vi.fn() }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+function render(ui: ReactElement, options?: RenderOptions) {
+  // react-router v7 forbids nesting Routers: tests that already supply their
+  // own MemoryRouter/BrowserRouter must not be wrapped a second time.
+  const tree =
+    ui.type === MemoryRouter || ui.type === BrowserRouter ? (
+      ui
+    ) : (
+      <MemoryRouter>{ui}</MemoryRouter>
+    );
+  return rtlRender(tree, options);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   clearWritingSessions();
@@ -480,4 +495,39 @@ it("does not restore another community account's writing session", async () => {
   render(<PostComposer onClose={() => {}} initialType="discussion" />);
   expect(await screen.findByLabelText("communityCompose.body")).toHaveValue("");
   expect(screen.queryByText("Alice's private text")).not.toBeInTheDocument();
+});
+
+function MarketSpy() {
+  const [params] = useSearchParams();
+  return (
+    <div data-testid="market-spy">{`post=${params.get("post") ?? ""}`}</div>
+  );
+}
+
+it("opens the published post via client-side navigation, not a full reload", async () => {
+  vi.mocked(request).mockResolvedValue({ id: "new-post" });
+  render(
+    <MemoryRouter initialEntries={["/write"]}>
+      <Routes>
+        <Route
+          path="/write"
+          element={
+            <PostComposer
+              onClose={() => {}}
+              initialBody={"# Report title\nReport body"}
+            />
+          }
+        />
+        <Route path="/market" element={<MarketSpy />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  fireEvent.click(await screen.findByRole("checkbox"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "communityCompose.publish" }),
+  );
+  fireEvent.click(await screen.findByText("communityCompose.view"));
+  expect(await screen.findByTestId("market-spy")).toHaveTextContent(
+    "post=new-post",
+  );
 });

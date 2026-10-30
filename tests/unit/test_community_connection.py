@@ -5,6 +5,7 @@
 import asyncio
 import json
 import time
+from email.utils import formatdate
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -56,6 +57,56 @@ def token_reply():
             "expires_in": 3600,
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_connection_exposes_account_avatar_url():
+    avatar = "https://oss.example.com/avatar/alice.png"
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "user_id": "account-a",
+                "username": "Alice",
+                "avatar_url": avatar,
+            },
+        )
+
+    tokens = {"access_token": "access-secret", "expires_in": 3600}
+    connection = await service(handler)._connection_from_tokens(tokens, None)
+    assert connection["avatar_url"] == avatar
+    await store.save_connection(connection)
+    status = await service(handler).status(local=True)
+    assert status["account"]["avatar_url"] == avatar
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "avatar",
+    [
+        "javascript:alert(1)",
+        "http://oss.example.com/a.png",
+        "https://user:pass@oss.example.com/a.png",
+        "https://oss.example.com/a b.png",
+        "/relative/avatar.png",
+        None,
+    ],
+)
+async def test_connection_rejects_unsafe_avatar_url(avatar):
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "user_id": "account-a",
+                "username": "Alice",
+                "avatar_url": avatar,
+            },
+        )
+
+    tokens = {"access_token": "access-secret", "expires_in": 3600}
+    connection = await service(handler)._connection_from_tokens(tokens, None)
+    assert connection["avatar_url"] is None
 
 
 @pytest.mark.asyncio
@@ -904,3 +955,140 @@ async def test_platform_draft_delete_null_envelope():
         )
         == {}
     )
+
+
+def test_retry_after_seconds_parses_delta_and_http_date():
+    def response(value):
+        headers = {"Retry-After": value} if value is not None else {}
+        return httpx.Response(429, headers=headers)
+
+    assert module._retry_after_seconds(response("120")) == 120.0
+    assert module._retry_after_seconds(response("0")) == 0.0
+    # A negative delta or a date already in the past clamps to zero.
+    assert module._retry_after_seconds(response("-5")) == 0.0
+    assert module._retry_after_seconds(response(None)) is None
+    assert module._retry_after_seconds(response("not-a-date")) is None
+    future = formatdate(time.time() + 60, usegmt=True)
+    assert 55 <= module._retry_after_seconds(response(future)) <= 60
+    past = formatdate(time.time() - 60, usegmt=True)
+    assert module._retry_after_seconds(response(past)) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_error_carries_retry_after():
+    await seed_connection()
+    svc = service(
+        lambda request: httpx.Response(
+            429,
+            headers={"Retry-After": "30"},
+        ),
+    )
+    with pytest.raises(module.CommunityConnectionError) as info:
+        await svc.sync_once()
+    assert info.value.code == "rate_limited"
+    assert info.value.status_code == 429
+    assert info.value.retry_after == 30.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "retry_after,expected",
+    [(600.0, 600.0), (None, 2.0), (1.0, 2.0)],
+)
+async def test_poll_loop_uses_retry_after_as_backoff_floor(
+    monkeypatch,
+    retry_after,
+    expected,
+):
+    svc = module.CommunityConnectionService(
+        module.ConnectionConfig("c", "s", True, interval=1.0),
+        transport=httpx.MockTransport(
+            lambda request: pytest.fail("no network"),
+        ),
+    )
+
+    async def failing_sync():
+        raise module.CommunityConnectionError(
+            "rate_limited",
+            429,
+            retry_after=retry_after,
+        )
+
+    monkeypatch.setattr(svc, "sync_once", failing_sync)
+    monkeypatch.setattr(module.secrets, "randbelow", lambda n: 0)
+    delays = []
+
+    async def capture_wait_for(awaitable, timeout):
+        delays.append(timeout)
+        svc._closed.set()
+        await awaitable
+        raise asyncio.TimeoutError
+
+    monkeypatch.setattr(module.asyncio, "wait_for", capture_wait_for)
+    await svc.poll_loop()
+    # Retry-After is a floor on top of the exponential backoff: it never
+    # shortens the normal delay (1.0 * 2**1 == 2) and is honoured when larger.
+    assert delays == [expected]
+
+
+def test_connection_interval_reads_environment(monkeypatch):
+    monkeypatch.delenv("QWENPAW_COMMUNITY_INTERVAL", raising=False)
+    assert module.ConnectionConfig.from_environment().interval == 120.0
+    monkeypatch.setenv("QWENPAW_COMMUNITY_INTERVAL", "45")
+    assert module.ConnectionConfig.from_environment().interval == 45.0
+    # Invalid or non-positive overrides fall back to the safe default.
+    monkeypatch.setenv("QWENPAW_COMMUNITY_INTERVAL", "not-a-number")
+    assert module.ConnectionConfig.from_environment().interval == 120.0
+    monkeypatch.setenv("QWENPAW_COMMUNITY_INTERVAL", "0")
+    assert module.ConnectionConfig.from_environment().interval == 120.0
+    monkeypatch.setenv("QWENPAW_COMMUNITY_INTERVAL", "-10")
+    assert module.ConnectionConfig.from_environment().interval == 120.0
+
+
+@pytest.mark.asyncio
+async def test_cancelled_flow_revokes_already_issued_credential():
+    entered, release = asyncio.Event(), asyncio.Event()
+    revoked = []
+
+    async def handler(request):
+        if request.url.path.endswith("/oauth/token"):
+            entered.set()
+            await release.wait()
+            return token_reply()
+        if request.url.path.endswith("/auth/refresh"):
+            return token_reply()
+        if request.url.path.endswith("/oauth/revoke"):
+            revoked.append(json.loads(request.content))
+            return httpx.Response(200, json={})
+        return httpx.Response(200, json={"user": {"id": "account-a"}})
+
+    connection_service = service(handler)
+    try:
+        auth = await connection_service.start(local=True)
+        query = parse_qs(urlsplit(auth["authorize_url"]).query)
+        completion = asyncio.create_task(
+            connection_service.complete(
+                urlsplit(query["redirect_uri"][0]).path,
+                {"state": query["state"], "code": ["code"]},
+            ),
+        )
+        await entered.wait()
+        await connection_service.cancel(auth["flow_id"])
+        release.set()
+        with pytest.raises(
+            module.CommunityConnectionError,
+            match="authorization_cancelled",
+        ):
+            await completion
+        assert await store.get_connection() is None
+        # The code was already exchanged; the live credential is revoked
+        # best-effort so no orphaned token is left behind.
+        assert revoked == [
+            {
+                "token": "new-refresh-secret",
+                "token_type_hint": "refresh_token",
+            },
+        ]
+    finally:
+        release.set()
+        await connection_service.close()

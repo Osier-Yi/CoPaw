@@ -12,11 +12,13 @@ import asyncio
 import base64
 import hashlib
 import os
+import re
 import secrets
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Sequence
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -33,10 +35,34 @@ PAGES_PER_SYNC = 5
 class CommunityConnectionError(Exception):
     """A sanitized error code suitable for the local settings UI."""
 
-    def __init__(self, code: str, status_code: int = 400):
+    def __init__(
+        self,
+        code: str,
+        status_code: int = 400,
+        retry_after: float | None = None,
+    ):
         self.code = code
         self.status_code = status_code
+        self.retry_after = retry_after
         super().__init__(code)
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    """Parse Retry-After (delta-seconds or HTTP-date) into seconds."""
+    value = response.headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, when.timestamp() - time.time())
 
 
 @dataclass(frozen=True)
@@ -50,6 +76,12 @@ class ConnectionConfig:
 
     @classmethod
     def from_environment(cls) -> "ConnectionConfig":
+        try:
+            interval = float(os.getenv("QWENPAW_COMMUNITY_INTERVAL", "120"))
+        except ValueError:
+            interval = 120.0
+        if interval <= 0:
+            interval = 120.0
         return cls(
             client_id=os.getenv(
                 "QWENPAW_COMMUNITY_CLIENT_ID",
@@ -64,6 +96,7 @@ class ConnectionConfig:
                 "true",
             ).lower()
             in {"true", "1", "yes"},
+            interval=interval,
         )
 
     @property
@@ -92,6 +125,31 @@ def safe_platform_link(value: Any) -> str | None:
     ):
         return None
     return url
+
+
+def safe_avatar_url(value: Any) -> str | None:
+    """Permit an HTTPS avatar URL (Platform or OSS) from the trusted /me.
+
+    Unlike ``safe_platform_link`` this does not pin the host: account
+    avatars are served from OSS. The value comes from the user's own
+    token-authenticated profile and is only rendered as an image source,
+    so any credential-free HTTPS URL is acceptable.
+    """
+    if not isinstance(value, str) or not value or len(value) > 4096:
+        return None
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return None
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or re.search(r'[\s<>"()]', value)
+    ):
+        return None
+    return value
 
 
 def _timestamp(value: Any) -> float:
@@ -347,7 +405,11 @@ class CommunityConnectionService:
             if response.status_code == 403:
                 raise CommunityConnectionError("permission_not_granted", 403)
             if response.status_code == 429:
-                raise CommunityConnectionError("rate_limited", 429)
+                raise CommunityConnectionError(
+                    "rate_limited",
+                    429,
+                    retry_after=_retry_after_seconds(response),
+                )
             if not response.is_success:
                 raise CommunityConnectionError("platform_unavailable", 502)
             if method == "DELETE" and response.status_code == 204:
@@ -621,6 +683,7 @@ class CommunityConnectionService:
             flow["status"] = "exchanging"
             verifier = flow.pop("verifier")
             flow.pop("state", None)
+        issued: dict | None = None
         try:
             tokens = await self._request(
                 "POST",
@@ -634,6 +697,7 @@ class CommunityConnectionService:
                 },
             )
             connection = await self._finalize_login(tokens)
+            issued = connection
             async with self._lock:
                 if (
                     self._flow is not flow
@@ -652,6 +716,11 @@ class CommunityConnectionService:
                 if self._flow is flow and flow["status"] == "exchanging":
                     flow["error"] = exc.code
                     await self._stop_flow("failed")
+            # The code was already exchanged for a live credential before the
+            # flow expired/was cancelled; revoke it best-effort so no orphaned
+            # token is left behind (mirrors disconnect).
+            if issued is not None and exc.code == "authorization_cancelled":
+                await self._revoke_token(issued)
             raise
 
     async def _finalize_login(self, tokens: dict) -> dict:
@@ -707,6 +776,9 @@ class CommunityConnectionService:
             "display_name": str(
                 user.get("display_name") or me.get("username") or account_id,
             )[:200],
+            "avatar_url": safe_avatar_url(
+                me.get("avatar_url") or user.get("avatar_url"),
+            ),
             "access_token": access,
             "refresh_token": tokens.get("refresh_token")
             or (previous or {}).get("refresh_token"),
@@ -775,6 +847,31 @@ class CommunityConnectionService:
                     raise CommunityConnectionError("connection_changed", 409)
             return refreshed
 
+    async def _revoke_token(self, connection: dict) -> bool:
+        """Best-effort remote revoke of an already-issued credential."""
+        token = connection.get("refresh_token") or connection.get(
+            "access_token"
+        )
+        if not token:
+            return False
+        try:
+            await self._request(
+                "POST",
+                "/api/cli/v1/oauth/revoke",
+                token=connection.get("access_token"),
+                json={
+                    "token": token,
+                    "token_type_hint": (
+                        "refresh_token"
+                        if connection.get("refresh_token")
+                        else "access_token"
+                    ),
+                },
+            )
+            return True
+        except CommunityConnectionError:
+            return False
+
     async def disconnect(self) -> dict:
         async with self._lock:
             await self._stop_flow("cancelled")
@@ -782,24 +879,7 @@ class CommunityConnectionService:
             await store.disconnect()
         revoked = old is None
         if old:
-            token = old.get("refresh_token") or old.get("access_token")
-            try:
-                await self._request(
-                    "POST",
-                    "/api/cli/v1/oauth/revoke",
-                    token=old.get("access_token"),
-                    json={
-                        "token": token,
-                        "token_type_hint": (
-                            "refresh_token"
-                            if old.get("refresh_token")
-                            else "access_token"
-                        ),
-                    },
-                )
-                revoked = True
-            except CommunityConnectionError:
-                pass
+            revoked = await self._revoke_token(old)
         return {"disconnected": True, "remote_revoked": revoked}
 
     async def set_sync(
@@ -1068,16 +1148,24 @@ class CommunityConnectionService:
         """Poll with backoff without interrupting the Agent runtime."""
         failures = 0
         while not self._closed.is_set():
+            retry_after: float | None = None
             try:
                 if self.config.configured and self.config.messages_enabled:
                     await self.sync_once()
                 failures = 0
+            except CommunityConnectionError as exc:
+                failures = min(failures + 1, 5)
+                retry_after = exc.retry_after
             except Exception:
                 failures = min(failures + 1, 5)
             delay = min(
                 1800,
                 self.config.interval * (2**failures),
             ) + secrets.randbelow(16)
+            if retry_after is not None:
+                # Honour the server's Retry-After as a floor on top of the
+                # normal exponential backoff (still capped at 30 minutes).
+                delay = max(delay, min(1800, retry_after))
             try:
                 await asyncio.wait_for(self._closed.wait(), delay)
             except asyncio.TimeoutError:

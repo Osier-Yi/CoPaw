@@ -201,3 +201,61 @@ async def test_browser_disconnect_cancels_model_task(monkeypatch):
         await report_router.generate_report(request(), SimpleNamespace())
     assert error.value.status_code == 499
     assert cancelled.is_set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "header",
+    ["bad id", "agent/../x", "a" * 129, "agent$id", ""],
+)
+async def test_invalid_agent_id_header_is_rejected(monkeypatch, header):
+    async def generate(_body):
+        pytest.fail("must not generate for an invalid agent id")
+
+    monkeypatch.setattr(report_router, "generate_community_report", generate)
+    with pytest.raises(report_router.HTTPException) as error:
+        await report_router.generate_report(
+            request(),
+            SimpleNamespace(headers={"X-Agent-Id": header}),
+        )
+    assert error.value.status_code == 422
+    assert error.value.detail == "invalid_agent_id"
+
+
+@pytest.mark.asyncio
+async def test_valid_agent_id_header_is_injected(monkeypatch):
+    captured = {}
+
+    async def generate(body):
+        captured["agent_id"] = body.agent_id
+        return "report"
+
+    async def disconnect(_request):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(report_router, "generate_community_report", generate)
+    monkeypatch.setattr(report_router, "_wait_for_disconnect", disconnect)
+    result = await report_router.generate_report(
+        request(),
+        SimpleNamespace(headers={"X-Agent-Id": "agent-1.2_x"}),
+    )
+    assert captured["agent_id"] == "agent-1.2_x"
+    assert result == {"report": "report"}
+
+
+@pytest.mark.asyncio
+async def test_absent_agent_id_header_stays_none(monkeypatch):
+    captured = {}
+
+    async def generate(body):
+        captured["agent_id"] = body.agent_id
+        return "report"
+
+    async def disconnect(_request):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(report_router, "generate_community_report", generate)
+    monkeypatch.setattr(report_router, "_wait_for_disconnect", disconnect)
+    result = await report_router.generate_report(request(), SimpleNamespace())
+    assert captured["agent_id"] is None
+    assert result == {"report": "report"}

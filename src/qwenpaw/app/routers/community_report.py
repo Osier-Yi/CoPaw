@@ -2,6 +2,7 @@
 """Local drafting and explicitly requested read-only diagnostics."""
 
 import asyncio
+import re
 import time
 
 from fastapi import APIRouter, HTTPException, Request
@@ -16,6 +17,10 @@ from ..community_report import (
 
 router = APIRouter(prefix="/community/report", tags=["community"])
 
+# Mirrors CommunityReportRequest.agent_id's pattern; model_copy(update=...)
+# bypasses Pydantic validation, so the X-Agent-Id header is checked manually.
+_AGENT_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
+
 
 async def _wait_for_disconnect(request: Request) -> None:
     while not await request.is_disconnected():
@@ -25,11 +30,14 @@ async def _wait_for_disconnect(request: Request) -> None:
 @router.post("/generate")
 async def generate_report(body: CommunityReportRequest, request: Request):
     if not body.agent_id:
-        body = body.model_copy(
-            update={
-                "agent_id": getattr(request, "headers", {}).get("X-Agent-Id"),
-            },
-        )
+        header_agent_id = getattr(request, "headers", {}).get("X-Agent-Id")
+        # model_copy(update=...) skips Pydantic validation, so enforce the
+        # agent_id contract on the header before injecting it.
+        if header_agent_id is not None and not _AGENT_ID_RE.fullmatch(
+            header_agent_id,
+        ):
+            raise HTTPException(status_code=422, detail="invalid_agent_id")
+        body = body.model_copy(update={"agent_id": header_agent_id})
     generation = asyncio.create_task(generate_community_report(body))
     disconnect = asyncio.create_task(_wait_for_disconnect(request))
     try:
