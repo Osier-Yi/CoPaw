@@ -594,7 +594,10 @@ async def test_native_installer_preserves_source_and_recovery_options(
     source_url = (
         "https://platform.agentscope.io/plugins/alice/demo/archive/zip/master"
     )
-    loader = SimpleNamespace(load_plugin_from_path=AsyncMock())
+    loader = SimpleNamespace(
+        load_plugin_from_path=AsyncMock(),
+        cleanup_preparation_source=AsyncMock(),
+    )
     app = SimpleNamespace(state=SimpleNamespace(plugin_loader=loader))
     monkeypatch.setattr(plugins, "_async_download", AsyncMock())
     monkeypatch.setattr(
